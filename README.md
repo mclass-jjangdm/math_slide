@@ -2,14 +2,27 @@
 
 수학 문제집 PDF를 올리면 문제를 한 장씩 잘라, 풀이 공간이 있는 **검은 칠판 슬라이드**로 만들어 주는 수업용 도구입니다. 인터넷 없이 내 컴퓨터에서 브라우저로 실행됩니다.
 
-## 실행
+## 설치와 실행 (Windows)
+
+1. [Git](https://git-scm.com/download/win)과 [Python 3.12](https://www.python.org/downloads/release/python-3129/)를 설치합니다. (Python은 설치할 때 **Add python.exe to PATH** 체크)
+2. 내려받기:
+   ```bash
+   git clone https://github.com/mclass-jjangdm/math_slide.git
+   ```
+3. 내려받은 `math_slide` 폴더의 **`start.bat`을 더블클릭**합니다. 처음 한 번은 필요한 라이브러리를 자동으로 설치하고(`.venv` 폴더), 이후에는 바로 실행됩니다. 브라우저가 자동으로 열립니다(http://localhost:8765).
+
+직접 실행하려면:
 
 ```bash
 pip install -r requirements.txt
 python mathslide/server.py
 ```
 
-Windows에서는 `mathslide/실행.bat`을 더블클릭해도 됩니다. 브라우저가 자동으로 열립니다(http://localhost:8765).
+업데이트: `math_slide` 폴더에서 `git pull`.
+
+### 문제가 생기면
+- `ImportError: DLL load failed while importing _extra` → 파이썬이 3.14 이상(미리보기 버전)이거나 Visual C++ 재배포 패키지가 없는 경우입니다. **Python 3.12를 설치**하고 `start.bat`을 다시 실행하세요. 그래도 안 되면 [VC++ 재배포 패키지](https://aka.ms/vs/17/release/vc_redist.x64.exe)를 설치하세요.
+- 이미 `.venv` 폴더가 만들어졌는데 계속 오류가 나면 `.venv` 폴더를 지우고 다시 실행하세요.
 
 ## 기능
 

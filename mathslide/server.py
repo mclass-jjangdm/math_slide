@@ -15,7 +15,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-import pymupdf
+try:
+    import pymupdf
+except ImportError as _e:   # 설치가 안 됐거나, 파이썬 버전과 맞지 않을 때 안내
+    print("\n[오류] PyMuPDF를 불러오지 못했습니다:", _e)
+    print("  - 'pip install -r requirements.txt' 를 실행했는지 확인하세요.")
+    print("  - 파이썬 3.14 이상(미리보기 버전)이면 정식 버전(3.12 권장)을 쓰세요.")
+    print("  - 'DLL load failed'라면 Microsoft Visual C++ 재배포 패키지를 설치하세요: https://aka.ms/vs/17/release/vc_redist.x64.exe")
+    print("  - 가장 쉬운 방법: 저장소 맨 위의 start.bat 을 더블클릭하세요.")
+    sys.exit(1)
 
 import detect
 

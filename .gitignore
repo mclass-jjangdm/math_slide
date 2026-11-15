@@ -1,6 +1,7 @@
 # 올린 PDF·잘라낸 그림·필기 기록 (교재 저작물이 들어 있으므로 저장소에 올리지 않는다)
 mathslide/projects/
 
+.venv/
 __pycache__/
 *.pyc
 
