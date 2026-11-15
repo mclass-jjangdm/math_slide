@@ -232,7 +232,7 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
     <button id="tTimer">⏱<br>타이머</button>
     <button id="tTheme">🌓<br>배경색</button>
     <button id="tFull">⛶<br>전체화면</button>
-    <button id="tClear">🗑<br>필기 비우기</button>
+    <button id="tClear">🗑<br>모든 필기 삭제</button>
     <button id="tHide">⌄<br>메뉴 숨김</button>
     <button id="tSaveB" data-menu="mSave">💾<br>저장</button>
     <button id="tExit">✕<br>나가기</button>
@@ -507,9 +507,10 @@ function figLayout(p) {
   const dims = p.figs.map(r => [r[2] - r[0], r[3] - r[1]]);
   const sumH = dims.reduce((s, d) => s + d[1], 0), maxW = Math.max(...dims.map(d => d[0]));
   const k = Math.min(availW / maxW, (availH - gap * (dims.length - 1)) / sumH, 6);
-  let y = 80; const out = [], v = p.figView || { dx: 0, dy: 0, sc: 1 };
-  dims.forEach((d, i) => {   // 그래프 묶음 전체를 사용자가 옮기고 키운 값(p.figView)만큼 보정한다
-    out.push({ r: p.figs[i], x: x0 + v.dx + 0, y: 80 + v.dy + (y - 80) * v.sc, w: d[0] * k * v.sc, h: d[1] * k * v.sc }); y += d[1] * k + gap
+  let y = 80; const out = [];
+  dims.forEach((d, i) => {   // 기본은 위에서 아래로 쌓고, 그래프마다 사용자가 옮기고 키운 값(p.figV[i])을 더한다
+    const v = (p.figV && p.figV[i]) || { dx: 0, dy: 0, sc: 1 };
+    out.push({ i, r: p.figs[i], x: x0 + v.dx, y: y + v.dy, w: d[0] * k * v.sc, h: d[1] * k * v.sc }); y += d[1] * k + gap
   });
   return out;
 }
@@ -528,11 +529,12 @@ async function toggleFig() {
   const p = cur();
   if (p.figs && p.figs.length) { p.figOn = !p.figOn; if (!p.figOn && P.sel === 'fig') P.sel = null; layoutFigs(); buildObjPop(); saveProblems(); return }
   try { p.figs = await (await api(`/p/${proj.id}/figs?n=${p.page}&r=${p.rect.join(',')}`)).json() } catch (e) { p.figs = [] }
+  p.figV = [];
   if (!p.figs.length) { toast('그래프를 자동으로 찾지 못했어요. 그래프 부분을 드래그해서 고르세요'); startFigSel(); return }
   p.figOn = true; buildFigs(); buildObjPop(); saveProblems(); toast(`그래프 ${p.figs.length}개를 크게 보여 줘요. 그래프를 누르면 크기·위치를 바꿀 수 있어요`);
 }
 function startFigSel() { selectObj(null); setTool('fig'); $('#figbar').style.display = 'flex' }
-function finishFigSel() { $('#figbar').style.display = 'none'; setTool('sel'); const p = cur(); if (p.figOn && p.figs && p.figs.length) selectObj('fig') }
+function finishFigSel() { $('#figbar').style.display = 'none'; setTool('sel'); const p = cur(); if (p.figOn && p.figs && p.figs.length) selectObj('fig', p.figs.length - 1) }
 $('#figDone').onclick = finishFigSel;
 // 수업 중 직접 고르기: 문제 위를 드래그하면 그 부분이 그래프로 추가된다
 let figDrag = null;
@@ -553,30 +555,32 @@ function figUp(e) {
   let [x0, y0] = toPt(Math.min(a[0], b[0]), Math.min(a[1], b[1])), [x1, y1] = toPt(Math.max(a[0], b[0]), Math.max(a[1], b[1]));
   x0 = Math.max(p.rect[0], x0); y0 = Math.max(p.rect[1], y0); x1 = Math.min(p.rect[2], x1); y1 = Math.min(p.rect[3], y1);
   if (x1 - x0 < 15 || y1 - y0 < 15) return;
-  if (!P.figSelNew) { p.figs = []; P.figSelNew = true }   // 선택 모드에 들어와 처음 고른 것부터 새로 모은다
+  p.figs = p.figs || []; p.figV = p.figV || [];   // 고른 영역은 기존 그래프 뒤에 추가된다
   p.figs.push([x0, y0, x1, y1].map(v => Math.round(v * 10) / 10)); p.figOn = true; buildFigs(); saveProblems();
 }
 // ---- 선택 · 이동 · 크기 조절: 문제나 그래프를 누르면 선택되고, 그 옆에 팝업 메뉴가 뜬다 ----
 const selPtrs = new Map();
 const stagePt = e => { const r = ink.getBoundingClientRect(); return [(e.clientX - r.left) * SW / r.width, (e.clientY - r.top) * SH / r.height] };
 const viewOf = () => cur().view || (cur().view = { dx: 0, dy: 0, sc: 1 });
-const figViewOf = () => cur().figView || (cur().figView = { dx: 0, dy: 0, sc: 1 });
-const selView = () => P.sel === 'fig' ? figViewOf() : viewOf();
+const figViewOf = i => { const p = cur(); p.figV = p.figV || []; return p.figV[i] || (p.figV[i] = { dx: 0, dy: 0, sc: 1 }) };
+const selView = () => P.sel === 'fig' ? figViewOf(P.selIdx) : viewOf();
 const SCALE_RANGE = { prob: [.25, 3.5], fig: [.3, 4] };
-function objBoxes() {   // 위에 있는 것(그래프)부터
+function objBoxes() {   // 위에 그려진 것부터: 그래프(나중 것이 위) → 문제
   const p = cur(), out = [], L = figLayout(p);
-  if (L.length) {
-    const x0 = Math.min(...L.map(l => l.x)), y0 = Math.min(...L.map(l => l.y));
-    out.push({ kind: 'fig', x: x0, y: y0, w: Math.max(...L.map(l => l.x + l.w)) - x0, h: Math.max(...L.map(l => l.y + l.h)) - y0 });
-  }
+  for (let n = L.length - 1; n >= 0; n--) out.push({ kind: 'fig', i: L[n].i, x: L[n].x, y: L[n].y, w: L[n].w, h: L[n].h });
   const b = placement(p, P.zoom); out.push({ kind: 'prob', x: b.x, y: b.y, w: b.w, h: b.h });
   return out;
 }
 function hitObj(pt) { const pad = 12; return objBoxes().find(o => pt[0] >= o.x - pad && pt[0] <= o.x + o.w + pad && pt[1] >= o.y - pad && pt[1] <= o.y + o.h + pad) }
-function selectObj(kind) { P.sel = kind; buildObjPop(); updateSelUI() }
+function selectObj(kind, idx) { P.sel = kind; P.selIdx = idx || 0; buildObjPop(); updateSelUI() }
 function layoutSel() { if (P.sel === 'fig') layoutFigs(); else layoutImg($('#pimg'), cur()) }
 function scaleSel(f) { const v = selView(), r = SCALE_RANGE[P.sel]; v.sc = Math.max(r[0], Math.min(r[1], v.sc * f)); layoutSel(); saveProblems() }
-function resetSel() { if (P.sel === 'fig') cur().figView = null; else cur().view = null; layoutSel(); saveProblems() }
+function resetSel() { if (P.sel === 'fig') { if (cur().figV) cur().figV[P.selIdx] = null } else cur().view = null; layoutSel(); saveProblems() }
+function deleteFig() {   // 선택한 그래프 하나를 지운다 (잘못 고른 경우)
+  const p = cur(), i = P.selIdx; p.figs.splice(i, 1); if (p.figV) p.figV.splice(i, 1);
+  if (!p.figs.length) p.figOn = false;
+  buildFigs(); selectObj(null); saveProblems(); toast('그래프를 삭제했어요');
+}
 function applyAllView() {
   const v = viewOf(); if (!confirm('지금 문제의 위치·크기를 모든 슬라이드에 적용할까요?')) return;
   proj.problems.forEach(p => p.view = { dx: v.dx, dy: v.dy, sc: v.sc }); layoutImg($('#pimg'), cur()); saveProblems(); toast('모든 슬라이드에 적용했어요');
@@ -598,14 +602,14 @@ function buildObjPop() {
     add('📌<br>전체 적용', applyAllView); gap();
     add(P.zoom ? '🔍<br>원래대로' : '🔍<br>크게 보기', toggleZoom, P.zoom);
     add(hasFig ? '📈<br>그래프 숨김' : '📈<br>그래프 확대', toggleFig, hasFig);
-    add('▭<br>그래프 선택', startFigSel);
+    add('▭<br>그래프 추가', startFigSel);
     if (p.answer || p.mask) add(P.ans ? '✅<br>정답 숨김' : '✅<br>정답·해설', toggleAns, P.ans);
-  } else { gap(); add('▭<br>다시 선택', startFigSel); add('✕<br>숨기기', toggleFig) }
+  } else { gap(); add('🗑<br>이 그래프 삭제', deleteFig); add('▭<br>그래프 추가', startFigSel); add('✕<br>모두 숨김', toggleFig) }
 }
 function updateSelUI() {
   const box = $('#selbox'), pop = $('#objpop');
   if (!P.sel || !cur() || P.tool !== 'sel') { box.style.display = 'none'; pop.style.display = 'none'; return }
-  const o = objBoxes().find(o => o.kind === P.sel);
+  const o = objBoxes().find(o => o.kind === P.sel && (o.kind !== 'fig' || o.i === P.selIdx));
   if (!o) { P.sel = null; return updateSelUI() }
   const m = 8; box.style.display = 'block'; box.style.left = o.x - m + 'px'; box.style.top = o.y - m + 'px'; box.style.width = o.w + 2 * m + 'px'; box.style.height = o.h + 2 * m + 'px';
   pop.style.display = 'flex';
@@ -621,7 +625,7 @@ function selDown(e) {
   if (P.sel && selPtrs.size >= 1) { try { ink.setPointerCapture(e.pointerId) } catch (x) { } selPtrs.set(e.pointerId, pt); e.preventDefault(); return }   // 둘째 손가락: 확대·축소
   const hit = hitObj(pt);
   if (!hit) { selectObj(null); setTool(P.lastWrite); return writeDown(e, true) }   // 빈 곳 → 필기 모드로 바꾸고 바로 쓰기 시작
-  if (P.sel !== hit.kind) selectObj(hit.kind);
+  if (P.sel !== hit.kind || (hit.kind === 'fig' && P.selIdx !== hit.i)) selectObj(hit.kind, hit.i);
   e.preventDefault(); try { ink.setPointerCapture(e.pointerId) } catch (x) { } selPtrs.set(e.pointerId, pt);
 }
 function selMove(e) {
@@ -766,7 +770,7 @@ $('#tTri').onclick = () => { P.shape = 'tri'; setTool('shape') };
 $('#tSq').onclick = () => { P.shape = 'sq'; setTool('shape') };
 $('#tPen').onclick = () => setTool('pen'); $('#tHl').onclick = () => setTool('hl'); $('#tEr').onclick = () => setTool('er');
 $('#tUndo').onclick = undo; $('#tRedo').onclick = redo;
-$('#tClear').onclick = () => { if (!curStrokes().length) return; pushHist(); P.strokes[cur().id] = []; redrawBase(); saveStrokes(); toast('비웠어요. ↩ 취소로 되돌릴 수 있어요') };
+$('#tClear').onclick = () => { if (!curStrokes().length) return; pushHist(); P.strokes[cur().id] = []; redrawBase(); saveStrokes(); toast('모든 필기를 삭제했어요. ↩ 취소로 되돌릴 수 있어요') };
 document.querySelectorAll('.edge button').forEach(b => b.onclick = () => go(P.i + Number(b.dataset.nav)));
 $('#tTheme').onclick = () => setTheme(P.theme === 'dark' ? 'light' : 'dark');
 $('#tFull').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
