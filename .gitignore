@@ -1,0 +1,10 @@
+# 올린 PDF·잘라낸 그림·필기 기록 (교재 저작물이 들어 있으므로 저장소에 올리지 않는다)
+mathslide/projects/
+
+__pycache__/
+*.pyc
+
+# 시험용 자료: 교재·학교 자료에서 만든 PDF/이미지
+testdata/*.pdf
+testdata/*.png
+testdata/yj/
