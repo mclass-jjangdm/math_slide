@@ -93,6 +93,28 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
 #tbmini{position:fixed;right:14px;bottom:14px;z-index:31;display:none;width:54px;height:54px;border-radius:50%;background:rgba(32,34,44,.94);color:#eee;border:1px solid #555;font-size:22px}
 #pop{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:rgba(32,34,44,.97);border:1px solid #555;border-radius:14px;padding:10px;z-index:32;display:none;gap:6px;color:#eee;flex-wrap:wrap;justify-content:center;max-width:94vw}
 #pop button{background:#2c2f3d;color:#eee;border:1px solid #444;min-width:56px;height:48px}
+#tb button.nav{min-width:60px;font-size:20px}
+#tb button.dirty{box-shadow:0 0 0 2px #e8b84d inset}
+.menu{position:fixed;left:50%;bottom:96px;display:none;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;background:rgba(32,34,44,.98);border:1px solid #555;border-radius:16px;padding:12px;z-index:33;box-shadow:0 8px 30px rgba(0,0,0,.55);max-width:94vw;color:#eee}
+.menu button{background:#2c2f3d;color:#eee;border:1px solid #444;min-width:92px;height:62px;border-radius:13px;font-size:14px;line-height:1.25;padding:0 8px}
+.menu button:hover{background:#3a3e52}
+.menu button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.menu button:disabled{opacity:.35}
+#mColor{flex-direction:column}
+#sws,#szs{display:flex;gap:10px;justify-content:center}
+.menu .sw{min-width:44px;width:44px;height:44px;padding:0;border-radius:50%;border:3px solid #555}
+.menu .sw.on{border-color:#fff}
+.menu .sz{min-width:56px;width:56px;height:44px;padding:0;display:flex;align-items:center;justify-content:center}
+.menu .sz i{display:block;border-radius:50%;background:#eee}
+.dd{position:relative}
+.ddm{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 26px rgba(0,0,0,.18);padding:10px;z-index:30;min-width:280px;flex-direction:column;gap:8px}
+.ddm.on{display:flex}
+.ddm .ddrow{display:flex;align-items:center;gap:8px;font-size:14px;flex-wrap:wrap}
+.ddm select{padding:6px;border-radius:8px;border:1px solid var(--line)}
+#side .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}
+#side .tools button{padding:8px 2px;font-size:12px;line-height:1.35}
+#side details{font-size:13px;color:var(--mute)}
+#side summary{cursor:pointer;font-weight:600;margin-bottom:4px}
 #grid{position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:40;display:none;overflow:auto;padding:24px}
 #grid .g{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
 #grid .c{background:#111;border:2px solid #333;border-radius:10px;padding:8px;cursor:pointer;height:190px;display:flex;flex-direction:column}
@@ -122,10 +144,16 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
     <span class="title" id="rName"></span>
     <button id="pPrev">◀</button><span id="pNum"></span><button id="pNext">▶</button>
     <span class="sp"></span>
-    <button id="bRedetect" title="문제 영역을 처음부터 다시 찾습니다">↻ 자동 재검출</button>
-    <select id="selPer" style="padding:8px;border-radius:10px;border:1px solid var(--line)"><option value="1">유인물 1문제/쪽</option><option value="2" selected>유인물 2문제/쪽</option><option value="4">유인물 4문제/쪽</option></select>
-    <button id="bHandout">🖨 학생용 유인물 PDF</button>
-    <button id="bExport">⬇ 슬라이드 PDF</button>
+    <span class="dd">
+      <button id="bMore">⋯ 더보기</button>
+      <div class="ddm" id="rmenu">
+        <button id="bRedetect" title="문제 영역을 처음부터 다시 찾습니다">↻ 자동 재검출</button>
+        <div class="ddrow">🖨 학생용 유인물
+          <select id="selPer"><option value="1">1문제/쪽</option><option value="2" selected>2문제/쪽</option><option value="4">4문제/쪽</option></select>
+          <button id="bHandout">PDF 만들기</button></div>
+      </div>
+    </span>
+    <button id="bExport">⬇ 슬라이드 PDF 저장</button>
     <button id="bPresent" class="pri">▶ 수업 시작</button>
   </div>
   <div id="warn">⚠ 이 PDF는 스캔본(텍스트 없음)으로 보여 자동 검출이 되지 않았습니다. 페이지 위에서 마우스(또는 손가락)로 드래그해 문제 영역을 직접 지정하세요.</div>
@@ -136,10 +164,14 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
       <div class="hd"><b id="cnt"></b><button id="bAll">전체 선택</button><button id="bNone">전체 해제</button></div>
       <div id="list"></div>
       <div class="ft">
-        <div style="margin-bottom:6px"><button id="bAns" disabled>📝 선택한 문제의 정답·해설 영역 지정</button></div>
-        <div style="margin-bottom:6px"><button id="bSplit" title="선택한 문제 안의 (1)(2)(3)… 소문항을 각각 슬라이드 한 장으로 나눕니다">✂ 선택 문제를 소문항 (1)(2)…로 나누기</button></div>
-        <div style="margin-bottom:6px"><button id="bRenum" title="선택한 문제의 번호를 시작으로 뒤 문제들을 +1씩 다시 매깁니다">🔢 선택 문제부터 번호 이어 매기기</button></div>
-        <b>사용법</b> · 빈 곳을 <b>드래그</b>하면 새 문제 상자 · 상자를 끌어 이동, 모서리로 크기 조절 · <b>Delete</b> 키로 삭제 · 체크 해제하면 수업에서 제외
+        <div class="tools">
+          <button id="bAns" disabled title="선택한 문제의 정답·해설 영역을 드래그로 지정합니다">📝<br>해설 영역</button>
+          <button id="bSplit" title="선택한 문제 안의 (1)(2)(3)… 소문항을 각각 슬라이드 한 장으로 나눕니다">✂<br>소문항 나누기</button>
+          <button id="bRenum" title="선택한 문제의 번호를 시작으로 뒤 문제들을 +1씩 다시 매깁니다">🔢<br>번호 이어 매기기</button>
+        </div>
+        <details><summary>사용법</summary>
+          빈 곳을 <b>드래그</b>하면 새 문제 상자 · 상자를 끌어 이동, 모서리로 크기 조절 · <b>Delete</b> 키로 삭제 · 체크 해제하면 수업에서 제외
+        </details>
       </div>
     </aside>
   </div>
@@ -157,34 +189,49 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
     <div id="timer"></div>
   </div>
   <div id="tb">
-    <button id="tPrev">◀<br>이전</button>
+    <button id="tPrev" class="nav" title="이전 (←)">◀</button>
     <span class="cnt" id="tCnt"></span>
-    <button id="tNext">다음<br>▶</button>
+    <button id="tNext" class="nav" title="다음 (→)">▶</button>
     <button id="tGrid">▦<br>목록</button>
     <span class="sep"></span>
     <button id="tPen" class="on">✏️<br>펜</button>
-    <button id="tHl">🖍<br>형광</button>
+    <button id="tHl">🖍<br>형광펜</button>
     <button id="tEr">🧽<br>지우개</button>
-    <span id="sws" style="display:flex;gap:5px"></span>
-    <button id="tSize">●<br>굵기</button>
-    <span class="sep"></span>
+    <button id="tColor" data-menu="mColor">●<br>색·굵기</button>
     <button id="tUndo">↩<br>취소</button>
     <button id="tRedo">↪<br>복원</button>
-    <button id="tClear">🗑<br>비우기</button>
     <span class="sep"></span>
-    <button id="tMv">✥<br>문제이동</button>
+    <button id="tProb" data-menu="mProb">📐<br>문제</button>
     <span id="mvbtns" style="display:none;gap:4px">
       <button id="tBig">＋<br>크게</button><button id="tSmall">－<br>작게</button><button id="tReset">↺<br>원위치</button><button id="tAllView">📌<br>전체적용</button>
     </span>
-    <button id="tFig">📈<br>그래프</button>
-    <button id="tFigSel">▭<br>그래프선택</button>
-    <button id="tZoom">🔍<br>확대</button>
-    <button id="tAns">✅<br>해설</button>
-    <button id="tTimer">⏱<br>타이머</button>
-    <button id="tTheme">🌓<br>배경</button>
-    <button id="tFull">⛶<br>전체화면</button>
-    <button id="tHide">⌄<br>숨김</button>
+    <button id="tMoreB" data-menu="mMore">⋯<br>더보기</button>
+    <button id="tSaveB" data-menu="mSave">💾<br>저장</button>
+    <span class="sep"></span>
     <button id="tExit">✕<br>나가기</button>
+  </div>
+  <!-- 펼침 메뉴 -->
+  <div class="menu" id="mColor"><div id="sws"></div><div id="szs"></div></div>
+  <div class="menu" id="mProb">
+    <button id="tMv">✥<br>이동·크기</button>
+    <button id="tFig">📈<br>그래프 확대</button>
+    <button id="tFigSel">▭<br>그래프 선택</button>
+    <button id="tZoom">🔍<br>문제 확대</button>
+    <button id="tAns">✅<br>정답·해설</button>
+  </div>
+  <div class="menu" id="mMore">
+    <button id="tTimer">⏱<br>타이머</button>
+    <button id="tTheme">🌓<br>배경색</button>
+    <button id="tFull">⛶<br>전체화면</button>
+    <button id="tClear">🗑<br>필기 비우기</button>
+    <button id="tHide">⌄<br>메뉴 숨김</button>
+  </div>
+  <div class="menu" id="mSave">
+    <div id="saveState" style="width:100%;text-align:center;color:#9fe3b5;font-size:14px;margin-bottom:2px"></div>
+    <button id="bSaveNow">💾<br>지금 저장</button>
+    <button id="bPng">🖼<br>이 슬라이드 PNG</button>
+    <button id="bPdf">📄<br>전체 PDF</button>
+    <div style="width:100%;text-align:center;color:#888;font-size:12px">필기는 자동으로 저장돼요 · PDF에는 필기가 포함돼요</div>
   </div>
   <button id="tbmini">⌃</button>
   <div id="pop"></div>
@@ -363,6 +410,9 @@ $('#pNext').onclick = () => { if (rv.page < proj.pages.length - 1) { rv.page++; 
 $('#bAll').onclick = () => { proj.problems.forEach(p => p.on = true); saveProblems(); renderPage(); renderList() };
 $('#bNone').onclick = () => { proj.problems.forEach(p => p.on = false); saveProblems(); renderPage(); renderList() };
 $('#bHome').onclick = () => { show('home'); loadRecent() };
+$('#bMore').onclick = e => { e.stopPropagation(); $('#rmenu').classList.toggle('on') };
+$('#rmenu').addEventListener('click', e => { if (e.target.closest('button')) $('#rmenu').classList.remove('on') });
+document.addEventListener('click', e => { if (!e.target.closest('.dd')) $('#rmenu').classList.remove('on') });
 $('#bAns').onclick = () => { const id = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); if (!id) return toast('먼저 목록이나 페이지에서 문제를 선택하세요'); rv.pickAns = id; updateBanner() };
 $('#bSplit').onclick = async () => {
   const id = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); if (!id) return toast('나눌 문제를 먼저 선택하세요');
@@ -397,7 +447,7 @@ const SIZES = [3, 5, 9, 15];
 const ink = $('#ink'), ictx = ink.getContext('2d');
 const base = document.createElement('canvas'); base.width = SW; base.height = SH; const bctx = base.getContext('2d');
 let saveStrokeT;
-function saveStrokes() { clearTimeout(saveStrokeT); saveStrokeT = setTimeout(() => api(`/p/${proj.id}/strokes`, { method: 'PUT', body: JSON.stringify(P.strokes) }), 700) }
+function saveStrokes() { setSaveState('dirty'); clearTimeout(saveStrokeT); saveStrokeT = setTimeout(doSaveStrokes, 700) }
 const cur = () => P.slides[P.i];
 const curStrokes = () => P.strokes[cur().id] || (P.strokes[cur().id] = []);
 
@@ -575,10 +625,14 @@ ink.addEventListener('contextmenu', e => e.preventDefault());
 function setTheme(t) {
   P.theme = t; const el = $('#present'); el.classList.toggle('dark', t === 'dark'); el.classList.toggle('light', t === 'light'); if (cur()) redrawBase();
 }
+const colorCss = c => c === 'auto' ? 'linear-gradient(135deg,#fff 50%,#111 50%)' : c;
 function buildBar() {
   const s = $('#sws'); s.innerHTML = '';
-  COLORS.forEach(c => { const b = document.createElement('button'); b.className = 'sw' + (c === P.color ? ' on' : ''); b.style.background = c === 'auto' ? 'linear-gradient(135deg,#fff 50%,#111 50%)' : c; b.onclick = () => { P.color = c; if (P.tool === 'er' || P.tool === 'mv') setTool('pen'); buildBar() }; s.appendChild(b) });
-  $('#tSize').innerHTML = `<span style="display:inline-block;width:${4 + P.size * 3}px;height:${4 + P.size * 3}px;border-radius:50%;background:#eee"></span><br>굵기`;
+  COLORS.forEach(c => { const b = document.createElement('button'); b.className = 'sw' + (c === P.color ? ' on' : ''); b.dataset.keep = 1; b.style.background = colorCss(c); b.onclick = () => { P.color = c; if (P.tool === 'er' || P.tool === 'mv' || P.tool === 'fig') setTool('pen'); buildBar() }; s.appendChild(b) });
+  const z = $('#szs'); z.innerHTML = '';
+  SIZES.forEach((w, i) => { const b = document.createElement('button'); b.className = 'sz' + (i === P.size ? ' on' : ''); b.dataset.keep = 1; b.innerHTML = `<i style="width:${6 + i * 5}px;height:${6 + i * 5}px"></i>`; b.onclick = () => { P.size = i; buildBar() }; z.appendChild(b) });
+  // 도구줄의 '색·굵기' 버튼에 지금 색과 굵기를 보여 준다
+  $('#tColor').innerHTML = `<span style="display:inline-block;width:${8 + P.size * 3}px;height:${8 + P.size * 3}px;border-radius:50%;background:${colorCss(P.color)};border:1px solid #888;vertical-align:middle"></span><br>색·굵기`;
 }
 function setTool(t) {
   P.tool = t; ['Pen', 'Hl', 'Er', 'Mv'].forEach(n => $('#t' + n).classList.toggle('on', n.toLowerCase() === t));
@@ -595,7 +649,6 @@ $('#tAllView').onclick = () => {
   proj.problems.forEach(p => p.view = { dx: v.dx, dy: v.dy, sc: v.sc }); layoutImg($('#pimg'), cur()); saveProblems(); toast('모든 슬라이드에 적용했어요');
 };
 $('#tPen').onclick = () => setTool('pen'); $('#tHl').onclick = () => setTool('hl'); $('#tEr').onclick = () => setTool('er');
-$('#tSize').onclick = () => { P.size = (P.size + 1) % SIZES.length; buildBar() };
 $('#tUndo').onclick = undo; $('#tRedo').onclick = redo;
 $('#tClear').onclick = () => { if (!curStrokes().length) return; pushHist(); P.strokes[cur().id] = []; redrawBase(); saveStrokes(); toast('비웠어요. ↩ 취소로 되돌릴 수 있어요') };
 $('#tPrev').onclick = () => go(P.i - 1); $('#tNext').onclick = () => go(P.i + 1);
@@ -609,6 +662,44 @@ $('#tTheme').onclick = () => setTheme(P.theme === 'dark' ? 'light' : 'dark');
 $('#tFull').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
 $('#tHide').onclick = () => { $('#tb').style.display = 'none'; $('#pop').style.display = 'none'; $('#tbmini').style.display = 'block' };
 $('#tbmini').onclick = () => { $('#tb').style.display = 'flex'; $('#tbmini').style.display = 'none' };
+
+/* ---- 펼침 메뉴: 도구줄의 버튼을 누르면 그 위에 메뉴가 열린다 ---- */
+function closeMenus() { document.querySelectorAll('.menu').forEach(m => m.style.display = 'none') }
+function openMenu(id, btn) {
+  const m = $('#' + id), was = m.style.display === 'flex'; closeMenus(); $('#pop').style.display = 'none'; if (was) return;
+  if (id === 'mSave') updateSaveState();
+  m.style.display = 'flex'; const r = btn.getBoundingClientRect(), mw = m.offsetWidth;
+  m.style.transform = 'none'; m.style.left = Math.max(8, Math.min(innerWidth - mw - 8, r.left + r.width / 2 - mw / 2)) + 'px';
+  m.style.bottom = (innerHeight - $('#tb').getBoundingClientRect().top + 10) + 'px';
+}
+document.querySelectorAll('#tb [data-menu]').forEach(b => b.addEventListener('click', () => openMenu(b.dataset.menu, b)));
+document.querySelectorAll('.menu').forEach(m => m.addEventListener('click', e => {   // 메뉴 안 버튼을 누르면 닫힌다(색·굵기는 계속 열어 둠)
+  const b = e.target.closest('button'); if (b && !b.dataset.keep && b.id !== 'tTimer') closeMenus();
+}));
+document.addEventListener('pointerdown', e => { if (!e.target.closest('.menu,#tb,#pop')) { closeMenus(); $('#pop').style.display = 'none' } }, true);
+
+/* ---- 저장 ---- */
+P.save = { state: 'saved', at: null };
+function updateSaveState() {
+  const t = P.save.at ? P.save.at.toTimeString().slice(0, 5) : '';
+  const txt = { saving: '저장 중…', dirty: '변경됨 · 곧 자동 저장돼요', saved: '✓ 저장됨' + (t ? ' · ' + t : '') }[P.save.state];
+  $('#saveState').textContent = txt; $('#saveState').style.color = P.save.state === 'saved' ? '#9fe3b5' : '#f3d27a';
+  $('#tSaveB').classList.toggle('dirty', P.save.state !== 'saved');
+}
+function setSaveState(s) { P.save.state = s; if (s === 'saved') P.save.at = new Date(); updateSaveState() }
+async function doSaveStrokes() {
+  setSaveState('saving');
+  try { await api(`/p/${proj.id}/strokes`, { method: 'PUT', body: JSON.stringify(P.strokes) }); setSaveState('saved') }
+  catch (e) { setSaveState('dirty'); toast('저장하지 못했어요. 서버가 켜져 있는지 확인하세요') }
+}
+async function flushSave() { clearTimeout(saveStrokeT); clearTimeout(saveT); await Promise.all([doSaveStrokes(), saveProblemsNow()]) }
+$('#bSaveNow').onclick = async () => { await flushSave(); toast('저장했어요 ✓') };
+$('#bPdf').onclick = async () => { await flushSave(); exportSlides() };
+$('#bPng').onclick = async () => {
+  const z = P.zoom; P.zoom = false; const cv = document.createElement('canvas'); cv.width = SW; cv.height = SH;
+  try { await paintSlide(cv.getContext('2d'), cur(), curStrokes(), P.theme) } finally { P.zoom = z }
+  cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${proj.name.replace(/\.pdf$/i, '')}_${cur().label}.png`; a.click(); toast('이미지를 저장했어요') });
+};
 $('#tExit').onclick = () => { stopTimer(); saveStrokes(); document.fullscreenElement && document.exitFullscreen(); show('review'); renderPage(); renderList() };
 $('#tGrid').onclick = () => {
   const g = $('#gg'); g.innerHTML = '';
@@ -649,6 +740,16 @@ document.addEventListener('keydown', e => {
 
 /* =================== 슬라이드 PDF 내보내기 (필기 포함) =================== */
 function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src }) }
+// 슬라이드 한 장을 캔버스에 그린다: 배경 + 문제 + 확대한 그래프 + 필기
+async function paintSlide(c, p, strokeList, theme) {
+  const img = await loadImg(cropUrl(p));
+  c.fillStyle = theme === 'dark' ? '#000' : '#fff'; c.fillRect(0, 0, SW, SH);
+  const b = placement(p, false);
+  c.save(); if (theme === 'dark') c.filter = 'invert(1) hue-rotate(180deg)'; c.drawImage(img, b.x, b.y, b.w, b.h);
+  for (const l of figLayout(p)) c.drawImage(await loadImg(figUrl(p, l.r)), l.x, l.y, l.w, l.h);
+  c.restore();
+  strokeList.forEach(s => drawStroke(c, s, theme));
+}
 async function exportSlides() {
   const slides = proj.problems.filter(p => p.on); if (!slides.length) return toast('내보낼 문제가 없어요');
   await saveProblemsNow(); let strokes = {}; try { strokes = await (await api(`/p/${proj.id}/strokes`)).json() } catch (e) { }
@@ -656,13 +757,8 @@ async function exportSlides() {
   const theme = P.theme, out = [], cv = document.createElement('canvas'); cv.width = SW; cv.height = SH; const c = cv.getContext('2d');
   try {
     for (let i = 0; i < slides.length; i++) {
-      busy(`슬라이드 만드는 중… ${i + 1}/${slides.length}`); const p = slides[i]; const img = await loadImg(cropUrl(p));
-      c.fillStyle = theme === 'dark' ? '#000' : '#fff'; c.fillRect(0, 0, SW, SH);
-      const b = placement(p, false);
-      c.save(); if (theme === 'dark') c.filter = 'invert(1) hue-rotate(180deg)'; c.drawImage(img, b.x, b.y, b.w, b.h);
-      for (const l of figLayout(p)) c.drawImage(await loadImg(figUrl(p, l.r)), l.x, l.y, l.w, l.h);   // 확대한 그래프
-      c.restore();
-      (strokes[p.id] || []).forEach(s => drawStroke(c, s, theme));
+      busy(`슬라이드 만드는 중… ${i + 1}/${slides.length}`);
+      await paintSlide(c, slides[i], strokes[slides[i].id] || [], theme);
       out.push(cv.toDataURL('image/jpeg', .92));
     }
     busy('PDF로 묶는 중…');
