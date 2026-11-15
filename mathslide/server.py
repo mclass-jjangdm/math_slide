@@ -222,6 +222,11 @@ class H(BaseHTTPRequestHandler):
                         ps = number_ids(detect.detect(get_doc(pid)))
                     write_json(d / "problems.json", ps)
                     return self.send(200, ps)
+                if rest == "figs" and method == "GET":   # 문제 안의 그래프 후보
+                    clip = tuple(float(v) for v in q["r"].split(","))
+                    with LOCK:
+                        figs = detect.find_figures(get_doc(pid)[int(q["n"])], clip)
+                    return self.send(200, figs)
                 if rest == "split" and method == "POST":
                     qid = json.loads(self.body())["id"]
                     probs = read_json(d / "problems.json", [])

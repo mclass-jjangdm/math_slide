@@ -73,6 +73,7 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
 #stage{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0;overflow:hidden}
 #stage img.p{position:absolute;display:block;max-width:none;pointer-events:none;-webkit-user-drag:none}
 #present.dark #stage img.p{filter:invert(1) hue-rotate(180deg)}
+#figs{position:absolute;left:0;top:0}
 #ink{position:absolute;left:0;top:0;width:1920px;height:1080px;touch-action:none;cursor:crosshair}
 #ans{display:none}
 #badge{position:absolute;right:28px;top:20px;font-size:30px;color:#888;font-variant-numeric:tabular-nums;pointer-events:none;opacity:.8}
@@ -149,6 +150,8 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
   <div id="stage">
     <img class="p" id="pimg" alt="">
     <img class="p" id="ans" alt="">
+    <div id="figs"></div>
+    <div id="rub" style="position:absolute;display:none;border:3px dashed #4dd8ff;background:rgba(77,216,255,.12);pointer-events:none;z-index:5"></div>
     <canvas id="ink" width="1920" height="1080"></canvas>
     <div id="badge"></div>
     <div id="timer"></div>
@@ -173,6 +176,8 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
     <span id="mvbtns" style="display:none;gap:4px">
       <button id="tBig">＋<br>크게</button><button id="tSmall">－<br>작게</button><button id="tReset">↺<br>원위치</button><button id="tAllView">📌<br>전체적용</button>
     </span>
+    <button id="tFig">📈<br>그래프</button>
+    <button id="tFigSel">▭<br>그래프선택</button>
     <button id="tZoom">🔍<br>확대</button>
     <button id="tAns">✅<br>해설</button>
     <button id="tTimer">⏱<br>타이머</button>
@@ -418,6 +423,64 @@ function placement(p, zoom) {
 function layoutImg(img, p) {
   const b = placement(p, P.zoom);
   img.style.width = b.w + 'px'; img.style.height = b.h + 'px'; img.style.left = b.x + 'px'; img.style.top = b.y + 'px';
+  if (img.id === 'pimg') layoutFigs();
+}
+
+// ---- 그래프 확대: 문제 옆(오른쪽)에 그래프만 크게 ----
+// p.figs = [[x0,y0,x1,y1], ...] (쪽 좌표), p.figOn = 보이기 여부
+const figUrl = (p, r) => `/api/p/${proj.id}/crop.png?n=${p.page}&r=${r.map(v => v.toFixed(1)).join(',')}&dpi=300`;
+function figLayout(p) {
+  if (!p.figOn || !p.figs || !p.figs.length) return [];
+  const b = placement(p, P.zoom);
+  let x0 = b.x + b.w + 40, availW = SW - 60 - x0;
+  if (availW < 420) { availW = 420; x0 = SW - 60 - availW }
+  const availH = SH - 150, gap = 26;
+  const dims = p.figs.map(r => [r[2] - r[0], r[3] - r[1]]);
+  const sumH = dims.reduce((s, d) => s + d[1], 0), maxW = Math.max(...dims.map(d => d[0]));
+  const k = Math.min(availW / maxW, (availH - gap * (dims.length - 1)) / sumH, 6);
+  let y = 80; const out = [];
+  dims.forEach((d, i) => { out.push({ r: p.figs[i], x: x0, y, w: d[0] * k, h: d[1] * k }); y += d[1] * k + gap });
+  return out;
+}
+function buildFigs() {
+  const box = $('#figs'), p = cur(); box.innerHTML = '';
+  (p.figs || []).forEach(r => { const im = document.createElement('img'); im.className = 'p'; im.src = figUrl(p, r); box.appendChild(im) });
+  layoutFigs();
+}
+function layoutFigs() {
+  const box = $('#figs'), p = cur(); if (!p) return;
+  const L = figLayout(p); box.style.display = L.length ? 'block' : 'none';
+  [...box.children].forEach((im, i) => { const l = L[i]; if (!l) return; im.style.left = l.x + 'px'; im.style.top = l.y + 'px'; im.style.width = l.w + 'px'; im.style.height = l.h + 'px' });
+  $('#tFig').classList.toggle('on', L.length > 0);
+}
+async function toggleFig() {
+  const p = cur();
+  if (p.figs && p.figs.length) { p.figOn = !p.figOn; layoutFigs(); saveProblems(); return }
+  try { p.figs = await (await api(`/p/${proj.id}/figs?n=${p.page}&r=${p.rect.join(',')}`)).json() } catch (e) { p.figs = [] }
+  if (!p.figs.length) { toast('그래프를 자동으로 찾지 못했어요. 그래프 부분을 드래그해서 고르세요'); setTool('fig'); return }
+  p.figOn = true; buildFigs(); saveProblems(); toast(`그래프 ${p.figs.length}개를 크게 보여 줘요. 다르면 ▭ 그래프선택으로 고르세요`);
+}
+// 수업 중 직접 고르기: 문제 위를 드래그하면 그 부분이 그래프로 추가된다
+let figDrag = null;
+function figDown(e) {
+  e.preventDefault(); try { ink.setPointerCapture(e.pointerId) } catch (x) { }
+  figDrag = { s: stagePt(e), id: e.pointerId };
+  if (!figDrag.fresh) { /* 첫 선택 때 기존 그래프를 비운다 */ }
+}
+function figMove(e) {
+  if (!figDrag || e.pointerId !== figDrag.id) return; const a = figDrag.s, b = stagePt(e), r = $('#rub');
+  r.style.display = 'block'; r.style.left = Math.min(a[0], b[0]) + 'px'; r.style.top = Math.min(a[1], b[1]) + 'px';
+  r.style.width = Math.abs(a[0] - b[0]) + 'px'; r.style.height = Math.abs(a[1] - b[1]) + 'px';
+}
+function figUp(e) {
+  if (!figDrag || e.pointerId !== figDrag.id) return; const a = figDrag.s, b = stagePt(e); figDrag = null; $('#rub').style.display = 'none';
+  const p = cur(), pl = placement(p, P.zoom), sc = pl.w / (p.rect[2] - p.rect[0]);
+  const toPt = (sx, sy) => [p.rect[0] + (sx - pl.x) / sc, p.rect[1] + (sy - pl.y) / sc];
+  let [x0, y0] = toPt(Math.min(a[0], b[0]), Math.min(a[1], b[1])), [x1, y1] = toPt(Math.max(a[0], b[0]), Math.max(a[1], b[1]));
+  x0 = Math.max(p.rect[0], x0); y0 = Math.max(p.rect[1], y0); x1 = Math.min(p.rect[2], x1); y1 = Math.min(p.rect[3], y1);
+  if (x1 - x0 < 15 || y1 - y0 < 15) return;
+  if (!P.figSelNew) { p.figs = []; P.figSelNew = true }   // 선택 모드에 들어와 처음 고른 것부터 새로 모은다
+  p.figs.push([x0, y0, x1, y1].map(v => Math.round(v * 10) / 10)); p.figOn = true; buildFigs(); saveProblems();
 }
 // ---- 문제 이동·크기 조절 (✥) ----
 const mvPtrs = new Map();
@@ -449,7 +512,7 @@ function go(i) {
   const a = $('#ans'); P.ans = false; a.style.display = 'none'; if (p.answer) { a.src = ansUrl(p); a.onload = () => layoutAns(a, p) }
   $('#tAns').disabled = !(p.answer || p.mask); $('#tAns').classList.remove('on'); P.zoom = false; $('#tZoom').classList.remove('on');
   $('#badge').textContent = /^\d+$/.test(p.label) ? p.label + '번' : p.label; $('#tCnt').textContent = `${P.i + 1} / ${P.slides.length}`;
-  fitStage(); redrawBase(); present_preload();
+  fitStage(); redrawBase(); present_preload(); buildFigs();
 }
 function present_preload() { [1, 2].forEach(d => { const q = P.slides[P.i + d]; if (q) new Image().src = cropUrl(q) }) }
 function drawStroke(ctx, s, theme) {
@@ -481,6 +544,7 @@ function eraseAt(x, y) {
 ink.addEventListener('wheel', e => { if (P.tool === 'mv') { e.preventDefault(); mvScale(e.deltaY < 0 ? 1.06 : 1 / 1.06) } }, { passive: false });
 ink.addEventListener('pointerdown', e => {
   if (P.tool === 'mv') return mvDown(e);
+  if (P.tool === 'fig') return figDown(e);
   if (P.drawing) return; e.preventDefault(); ink.setPointerCapture(e.pointerId);
   const r = ink.getBoundingClientRect(), pos = ev => [(ev.clientX - r.left) * SW / r.width, (ev.clientY - r.top) * SH / r.height];
   const eraser = P.tool === 'er' || (e.buttons & 32);
@@ -491,6 +555,7 @@ ink.addEventListener('pointerdown', e => {
 });
 ink.addEventListener('pointermove', e => {
   if (P.tool === 'mv') return mvMove(e);
+  if (P.tool === 'fig') return figMove(e);
   const d = P.drawing; if (!d || e.pointerId !== d.id) return;
   let evs = e.getCoalescedEvents ? e.getCoalescedEvents() : []; if (!evs.length) evs = [e];
   for (const ev of evs) { const [x, y] = d.pos(ev); if (d.eraser) { if (eraseAt(x, y)) d.moved = true } else { const l = d.s.p[d.s.p.length - 1]; if (Math.hypot(x - l[0], y - l[1]) > 1.2) d.s.p.push([x, y]) } }
@@ -498,6 +563,7 @@ ink.addEventListener('pointermove', e => {
 });
 const endDraw = e => {
   if (P.tool === 'mv') return mvUp(e);
+  if (P.tool === 'fig') return figUp(e);
   const d = P.drawing; if (!d || e.pointerId !== d.id) return; P.drawing = null;
   if (d.eraser) { if (!d.moved && (P.hist[cur().id] || []).length) { /* 변화 없음: 기록 제거 */ P.hist[cur().id].pop() } }
   else { curStrokes().push(d.s); bctx.clearRect(0, 0, SW, SH); curStrokes().forEach(s => drawStroke(bctx, s, P.theme)); blit() }
@@ -516,8 +582,11 @@ function buildBar() {
 }
 function setTool(t) {
   P.tool = t; ['Pen', 'Hl', 'Er', 'Mv'].forEach(n => $('#t' + n).classList.toggle('on', n.toLowerCase() === t));
+  $('#tFigSel').classList.toggle('on', t === 'fig'); P.figSelNew = false; $('#rub').style.display = 'none';
   ink.style.cursor = t === 'er' ? 'cell' : t === 'mv' ? 'move' : 'crosshair'; $('#mvbtns').style.display = t === 'mv' ? 'flex' : 'none';
 }
+$('#tFig').onclick = toggleFig;
+$('#tFigSel').onclick = () => { if (P.tool === 'fig') setTool('pen'); else { setTool('fig'); toast('문제 위에서 그래프 부분을 드래그하세요 (여러 개 가능, 끝나면 ▭ 다시 누르기)') } };
 $('#tMv').onclick = () => setTool(P.tool === 'mv' ? 'pen' : 'mv');
 $('#tBig').onclick = () => mvScale(1.12); $('#tSmall').onclick = () => mvScale(1 / 1.12);
 $('#tReset').onclick = () => { cur().view = null; layoutImg($('#pimg'), cur()); saveProblems() };
@@ -583,13 +652,16 @@ function loadImg(src) { return new Promise((res, rej) => { const i = new Image()
 async function exportSlides() {
   const slides = proj.problems.filter(p => p.on); if (!slides.length) return toast('내보낼 문제가 없어요');
   await saveProblemsNow(); let strokes = {}; try { strokes = await (await api(`/p/${proj.id}/strokes`)).json() } catch (e) { }
+  P.zoom = false;
   const theme = P.theme, out = [], cv = document.createElement('canvas'); cv.width = SW; cv.height = SH; const c = cv.getContext('2d');
   try {
     for (let i = 0; i < slides.length; i++) {
       busy(`슬라이드 만드는 중… ${i + 1}/${slides.length}`); const p = slides[i]; const img = await loadImg(cropUrl(p));
       c.fillStyle = theme === 'dark' ? '#000' : '#fff'; c.fillRect(0, 0, SW, SH);
       const b = placement(p, false);
-      c.save(); if (theme === 'dark') c.filter = 'invert(1) hue-rotate(180deg)'; c.drawImage(img, b.x, b.y, b.w, b.h); c.restore();
+      c.save(); if (theme === 'dark') c.filter = 'invert(1) hue-rotate(180deg)'; c.drawImage(img, b.x, b.y, b.w, b.h);
+      for (const l of figLayout(p)) c.drawImage(await loadImg(figUrl(p, l.r)), l.x, l.y, l.w, l.h);   // 확대한 그래프
+      c.restore();
       (strokes[p.id] || []).forEach(s => drawStroke(c, s, theme));
       out.push(cv.toDataURL('image/jpeg', .92));
     }

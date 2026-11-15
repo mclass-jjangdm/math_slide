@@ -266,6 +266,61 @@ def split_subitems(page, rect, parent_label=""):
     } for n, r in out]
 
 
+def find_figures(page, rect, min_size=38.0):
+    """문제 영역 안의 그래프·그림 후보 사각형들(읽는 순서). 벡터 도형 묶음과 이미지를 함께 찾는다."""
+    rect = pymupdf.Rect(rect)
+    boxes = []   # [rect, 개수]
+    for im in page.get_image_info():
+        r = pymupdf.Rect(im["bbox"])
+        c = pymupdf.Point((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2)
+        if rect.contains(c) and r.width >= min_size and r.height >= min_size:
+            boxes.append([r & rect, 8])
+    for d in page.get_drawings():
+        r = pymupdf.Rect(d["rect"])
+        if r.x0 < rect.x0 - 3 or r.y0 < rect.y0 - 3 or r.x1 > rect.x1 + 3 or r.y1 > rect.y1 + 3:
+            continue   # 영역 밖으로 나가는 큰 배경·테두리
+        if r.width > 0.9 * rect.width and r.height > 25:
+            continue   # 문제 전체를 두른 상자
+        if max(r.width, r.height) > 140 and min(r.width, r.height) < 3:
+            continue   # 긴 구분선·테두리선
+        # 두께 0인 선은 합집합 계산에서 빠지므로 아주 조금 부풀린다
+        boxes.append([pymupdf.Rect(r.x0 - .4, r.y0 - .4, r.x1 + .4, r.y1 + .4), 1])
+    # 가까운(겹치거나 6pt 이내) 도형끼리 묶는다
+    merged = True
+    while merged and len(boxes) > 1:
+        merged = False
+        out = []
+        while boxes:
+            a = boxes.pop()
+            grow = pymupdf.Rect(a[0].x0 - 6, a[0].y0 - 6, a[0].x1 + 6, a[0].y1 + 6)
+            keep = []
+            for b in boxes:
+                if grow.intersects(b[0]):
+                    a = [a[0] | b[0], a[1] + b[1]]
+                    grow = pymupdf.Rect(a[0].x0 - 6, a[0].y0 - 6, a[0].x1 + 6, a[0].y1 + 6)
+                    merged = True
+                else:
+                    keep.append(b)
+            boxes = keep
+            out.append(a)
+        boxes = out
+    figs = [r for r, n in boxes if n >= 6 and r.width >= min_size and r.height >= min_size]
+    # 축 이름·점 이름 같은 짧은 글자도 그림에 포함한다
+    lines = [pymupdf.Rect(ln["bbox"]) for b in page.get_text("dict")["blocks"] for ln in b.get("lines", [])
+             if ln["bbox"][2] - ln["bbox"][0] < 70]
+    res = []
+    for f in figs:
+        g = pymupdf.Rect(f)
+        near = pymupdf.Rect(f.x0 - 12, f.y0 - 10, f.x1 + 12, f.y1 + 10)
+        for ln in lines:
+            if near.contains(pymupdf.Point((ln.x0 + ln.x1) / 2, (ln.y0 + ln.y1) / 2)):
+                g |= ln
+        g = pymupdf.Rect(g.x0 - 5, g.y0 - 5, g.x1 + 5, g.y1 + 5) & rect
+        res.append(g)
+    res.sort(key=lambda r: (round(r.y0 / 25), r.x0))
+    return [[round(r.x0, 1), round(r.y0, 1), round(r.x1, 1), round(r.y1, 1)] for r in res]
+
+
 ANS_START = re.compile(r"^[\(\[（]?\s*정답")
 
 
