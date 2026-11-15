@@ -565,16 +565,36 @@ const viewOf = () => cur().view || (cur().view = { dx: 0, dy: 0, sc: 1 });
 const figViewOf = i => { const p = cur(); p.figV = p.figV || []; return p.figV[i] || (p.figV[i] = { dx: 0, dy: 0, sc: 1 }) };
 const selView = () => P.sel === 'fig' ? figViewOf(P.selIdx) : viewOf();
 const SCALE_RANGE = { prob: [.25, 3.5], fig: [.3, 4] };
-function objBoxes() {   // 위에 그려진 것부터: 그래프(나중 것이 위) → 문제
+const bboxOf = pts => { const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]), x = Math.min(...xs), y = Math.min(...ys); return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y } };
+function objBoxes(withShapes) {   // 위에 그려진 것부터: 도형 → 그래프(나중 것이 위) → 문제
   const p = cur(), out = [], L = figLayout(p);
+  if (withShapes) curStrokes().forEach((st, k) => { if (st.sh) out.unshift({ kind: 'shape', i: k, ...bboxOf(st.p) }) });
   for (let n = L.length - 1; n >= 0; n--) out.push({ kind: 'fig', i: L[n].i, x: L[n].x, y: L[n].y, w: L[n].w, h: L[n].h });
   const b = placement(p, P.zoom); out.push({ kind: 'prob', x: b.x, y: b.y, w: b.w, h: b.h });
   return out;
 }
-function hitObj(pt) { const pad = 12; return objBoxes().find(o => pt[0] >= o.x - pad && pt[0] <= o.x + o.w + pad && pt[1] >= o.y - pad && pt[1] <= o.y + o.h + pad) }
+function nearShape(pt, st) {   // 도형은 안쪽이 아니라 '선 가까이'를 눌렀을 때만 잡는다 (도형 안에도 글을 쓸 수 있게)
+  const lim = Math.max(18, st.w / 2 + 12);
+  for (let j = 0; j < st.p.length - 1; j++) if (segDist(pt[0], pt[1], st.p[j], st.p[j + 1]) <= lim) return true;
+  return false;
+}
+function hitObj(pt) {
+  const strokes = curStrokes();
+  for (let k = strokes.length - 1; k >= 0; k--) if (strokes[k].sh && nearShape(pt, strokes[k])) return { kind: 'shape', i: k, ...bboxOf(strokes[k].p) };
+  const pad = 12; return objBoxes().find(o => pt[0] >= o.x - pad && pt[0] <= o.x + o.w + pad && pt[1] >= o.y - pad && pt[1] <= o.y + o.h + pad) }
 function selectObj(kind, idx) { P.sel = kind; P.selIdx = idx || 0; buildObjPop(); updateSelUI() }
-function layoutSel() { if (P.sel === 'fig') layoutFigs(); else layoutImg($('#pimg'), cur()) }
-function scaleSel(f) { const v = selView(), r = SCALE_RANGE[P.sel]; v.sc = Math.max(r[0], Math.min(r[1], v.sc * f)); layoutSel(); saveProblems() }
+function layoutSel() { if (P.sel === 'shape') updateSelUI(); else if (P.sel === 'fig') layoutFigs(); else layoutImg($('#pimg'), cur()) }
+// 도형 이동·확대·축소: 점 m0 를 기준으로 f 배 하고 m1 으로 옮긴다
+function moveShape(m0, m1, f) {
+  const st = curStrokes()[P.selIdx]; if (!st) return;
+  st.p = st.p.map(([x, y]) => [m1[0] + (x - m0[0]) * f, m1[1] + (y - m0[1]) * f]);
+  redrawBase(); updateSelUI();
+}
+function deleteShape() { pushHist(); curStrokes().splice(P.selIdx, 1); redrawBase(); saveStrokes(); selectObj(null); toast('도형을 삭제했어요 (↩ 취소로 되돌릴 수 있어요)') }
+function scaleSel(f) {
+  if (P.sel === 'shape') { const st = curStrokes()[P.selIdx]; if (!st) return; const b = bboxOf(st.p), c = [b.x + b.w / 2, b.y + b.h / 2]; pushHist(); moveShape(c, c, f); saveStrokes(); return }
+  const v = selView(), r = SCALE_RANGE[P.sel]; v.sc = Math.max(r[0], Math.min(r[1], v.sc * f)); layoutSel(); saveProblems()
+}
 function resetSel() { if (P.sel === 'fig') { if (cur().figV) cur().figV[P.selIdx] = null } else cur().view = null; layoutSel(); saveProblems() }
 function deleteFig() {   // 선택한 그래프 하나를 지운다 (잘못 고른 경우)
   const p = cur(), i = P.selIdx; p.figs.splice(i, 1); if (p.figV) p.figV.splice(i, 1);
@@ -597,6 +617,7 @@ function buildObjPop() {
   const add = (html, fn, on) => { const b = document.createElement('button'); b.innerHTML = html; if (on) b.className = 'on'; b.onclick = e => { e.stopPropagation(); fn() }; el.appendChild(b) };
   const gap = () => { const g = document.createElement('span'); g.className = 'gap'; el.appendChild(g) };
   const hasFig = !!(p.figOn && p.figs && p.figs.length);
+  if (P.sel === 'shape') { add('＋<br>크게', () => scaleSel(1.12)); add('－<br>작게', () => scaleSel(1 / 1.12)); gap(); add('🗑<br>도형 삭제', deleteShape); return }
   add('＋<br>크게', () => scaleSel(1.12)); add('－<br>작게', () => scaleSel(1 / 1.12)); add('↺<br>원위치', resetSel);
   if (P.sel === 'prob') {
     add('📌<br>전체 적용', applyAllView); gap();
@@ -609,7 +630,7 @@ function buildObjPop() {
 function updateSelUI() {
   const box = $('#selbox'), pop = $('#objpop');
   if (!P.sel || !cur() || P.tool !== 'sel') { box.style.display = 'none'; pop.style.display = 'none'; return }
-  const o = objBoxes().find(o => o.kind === P.sel && (o.kind !== 'fig' || o.i === P.selIdx));
+  const o = objBoxes(true).find(o => o.kind === P.sel && (o.kind === 'prob' || o.i === P.selIdx));
   if (!o) { P.sel = null; return updateSelUI() }
   const m = 8; box.style.display = 'block'; box.style.left = o.x - m + 'px'; box.style.top = o.y - m + 'px'; box.style.width = o.w + 2 * m + 'px'; box.style.height = o.h + 2 * m + 'px';
   pop.style.display = 'flex';
@@ -625,12 +646,23 @@ function selDown(e) {
   if (P.sel && selPtrs.size >= 1) { try { ink.setPointerCapture(e.pointerId) } catch (x) { } selPtrs.set(e.pointerId, pt); e.preventDefault(); return }   // 둘째 손가락: 확대·축소
   const hit = hitObj(pt);
   if (!hit) { selectObj(null); setTool(P.lastWrite); return writeDown(e, true) }   // 빈 곳 → 필기 모드로 바꾸고 바로 쓰기 시작
-  if (P.sel !== hit.kind || (hit.kind === 'fig' && P.selIdx !== hit.i)) selectObj(hit.kind, hit.i);
+  if (P.sel !== hit.kind || ((hit.kind === 'fig' || hit.kind === 'shape') && P.selIdx !== hit.i)) selectObj(hit.kind, hit.i);
+  P.shapeDirty = false;
   e.preventDefault(); try { ink.setPointerCapture(e.pointerId) } catch (x) { } selPtrs.set(e.pointerId, pt);
 }
 function selMove(e) {
   if (!selPtrs.has(e.pointerId) || !P.sel) return;
   const keys = [...selPtrs.keys()], old = [...selPtrs.values()], was = selPtrs.get(e.pointerId), now = stagePt(e); selPtrs.set(e.pointerId, now);
+  if (P.sel === 'shape') {   // 도형: 한 손가락은 이동, 두 손가락은 확대·축소(+이동)
+    if (!P.shapeDirty) { pushHist(); P.shapeDirty = true }   // 실제로 움직일 때 한 번만 취소 기록을 남긴다
+    if (old.length === 1) moveShape(was, now, 1);
+    else {
+      const [a, b] = [...selPtrs.values()], idx = keys.indexOf(e.pointerId), [a0, b0] = old.map((p, i) => i === idx ? was : p);
+      const d0 = Math.hypot(a0[0] - b0[0], a0[1] - b0[1]), d1 = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      moveShape([(a0[0] + b0[0]) / 2, (a0[1] + b0[1]) / 2], [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d0 > 20 ? d1 / d0 : 1);
+    }
+    return;
+  }
   const v = selView(), r = SCALE_RANGE[P.sel];
   if (old.length === 1) { v.dx += now[0] - was[0]; v.dy += now[1] - was[1] }
   else {
@@ -641,7 +673,7 @@ function selMove(e) {
   }
   layoutSel();
 }
-function selUp(e) { if (selPtrs.delete(e.pointerId)) saveProblems() }
+function selUp(e) { if (selPtrs.delete(e.pointerId)) { if (P.sel === 'shape') { if (P.shapeDirty) saveStrokes() } else saveProblems() } }
 function layoutAns(img, p) {
   const wpt = p.answer.rect[2] - p.answer.rect[0], hpt = p.answer.rect[3] - p.answer.rect[1];
   const k = Math.min(3.0, 800 / wpt, 980 / hpt); img.style.width = wpt * k + 'px'; img.style.height = hpt * k + 'px'; img.style.left = SW - 40 - wpt * k + 'px'; img.style.top = '40px';
@@ -676,8 +708,8 @@ function redrawBase() {
 }
 function blit(extra) { ictx.clearRect(0, 0, SW, SH); ictx.drawImage(base, 0, 0); if (extra) drawStroke(ictx, extra, P.theme) }
 function pushHist() { const id = cur().id; (P.hist[id] = P.hist[id] || []).push(JSON.stringify(curStrokes())); if (P.hist[id].length > 60) P.hist[id].shift(); P.redo[id] = [] }
-function undo() { const id = cur().id, h = P.hist[id]; if (!h || !h.length) return; (P.redo[id] = P.redo[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(h.pop()); redrawBase(); saveStrokes() }
-function redo() { const id = cur().id, r = P.redo[id]; if (!r || !r.length) return; (P.hist[id] = P.hist[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(r.pop()); redrawBase(); saveStrokes() }
+function undo() { if (P.sel === 'shape') selectObj(null); const id = cur().id, h = P.hist[id]; if (!h || !h.length) return; (P.redo[id] = P.redo[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(h.pop()); redrawBase(); saveStrokes() }
+function redo() { if (P.sel === 'shape') selectObj(null); const id = cur().id, r = P.redo[id]; if (!r || !r.length) return; (P.hist[id] = P.hist[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(r.pop()); redrawBase(); saveStrokes() }
 function segDist(px, py, a, b) {
   const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy; let t = l ? ((px - a[0]) * dx + (py - a[1]) * dy) / l : 0; t = Math.max(0, Math.min(1, t));
   return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
@@ -770,7 +802,7 @@ $('#tTri').onclick = () => { P.shape = 'tri'; setTool('shape') };
 $('#tSq').onclick = () => { P.shape = 'sq'; setTool('shape') };
 $('#tPen').onclick = () => setTool('pen'); $('#tHl').onclick = () => setTool('hl'); $('#tEr').onclick = () => setTool('er');
 $('#tUndo').onclick = undo; $('#tRedo').onclick = redo;
-$('#tClear').onclick = () => { if (!curStrokes().length) return; pushHist(); P.strokes[cur().id] = []; redrawBase(); saveStrokes(); toast('모든 필기를 삭제했어요. ↩ 취소로 되돌릴 수 있어요') };
+$('#tClear').onclick = () => { if (!curStrokes().length) return; if (P.sel === 'shape') selectObj(null); pushHist(); P.strokes[cur().id] = []; redrawBase(); saveStrokes(); toast('모든 필기를 삭제했어요. ↩ 취소로 되돌릴 수 있어요') };
 document.querySelectorAll('.edge button').forEach(b => b.onclick = () => go(P.i + Number(b.dataset.nav)));
 $('#tTheme').onclick = () => setTheme(P.theme === 'dark' ? 'light' : 'dark');
 $('#tFull').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
