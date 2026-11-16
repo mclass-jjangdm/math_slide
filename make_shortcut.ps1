@@ -1,9 +1,9 @@
-# Creates shortcuts for "Class Slide Maker" on the Desktop and in the Start menu.
+# Creates shortcuts for the app on the Desktop and in the Start menu.
 # (This file is ASCII only on purpose: the Korean shortcut name is stored as Base64.)
 param([string]$OutDir = "")
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$name = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('7IiY7JeFIOyKrOudvOydtOuTnCDrqZTsnbTsu6Q='))
+$name = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('7Jeg7YG0656Y7Iqk7IiY7ZWZ6rO87ZWZ7KCE66y47ZWZ7JuQ'))
 $bat  = Join-Path $root 'start.bat'
 $icon = Join-Path $root 'mathslide\static\icon.ico'
 
@@ -20,14 +20,27 @@ function New-AppLink($dir) {
     $lnk.WorkingDirectory = $root
     $lnk.IconLocation     = $icon + ',0'
     $lnk.WindowStyle      = 7        # start minimized (the console window stays in the taskbar; close it to quit)
-    $lnk.Description      = 'Class Slide Maker'
+    $lnk.Description      = $name
     $lnk.Save()
     Write-Host "Created: $path"
 }
 
+# Remove the shortcut that an earlier version created under the old name (only if it points at this start.bat).
+$oldName = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('7IiY7JeFIOyKrOudvOydtOuTnCDrqZTsnbTsu6Q='))
+function Remove-OldLink($dir) {
+    $old = Join-Path $dir ($oldName + '.lnk')
+    if (Test-Path $old) {
+        $ws = New-Object -ComObject WScript.Shell
+        if ($ws.CreateShortcut($old).Arguments -like '*start.bat*') { Remove-Item $old -Force; Write-Host "Removed old shortcut: $old" }
+    }
+}
+
 if ($OutDir -ne "") {
+    Remove-OldLink $OutDir
     New-AppLink $OutDir
 } else {
-    New-AppLink ([Environment]::GetFolderPath('Desktop'))
-    New-AppLink ([Environment]::GetFolderPath('Programs'))   # Start menu (searchable)
+    $desktop = [Environment]::GetFolderPath('Desktop'); $programs = [Environment]::GetFolderPath('Programs')   # Start menu (searchable)
+    Remove-OldLink $desktop; Remove-OldLink $programs
+    New-AppLink $desktop
+    New-AppLink $programs
 }

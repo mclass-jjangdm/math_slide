@@ -1,4 +1,4 @@
-"""수업 슬라이드 메이커 - 로컬 서버.   실행:  python server.py
+"""엠클래스수학과학전문학원 수업 슬라이드 - 로컬 서버.   실행:  python server.py
 브라우저가 자동으로 열린다(http://localhost:8765).  외부 인터넷 불필요.
 필요 라이브러리: pymupdf  (pip install pymupdf)
 """
@@ -8,6 +8,7 @@ import json
 import mimetypes
 import re
 import shutil
+import subprocess
 import os
 import sys
 import threading
@@ -340,6 +341,28 @@ class H(BaseHTTPRequestHandler):
         self.route("DELETE")
 
 
+def open_app_window(url):
+    """Edge/Chrome를 '앱 창 모드'(주소창·탭 없음)로 연다. 못 찾으면 False -> 일반 브라우저로 연다."""
+    if os.name != "nt":
+        return False
+    bases = [os.environ.get(k) for k in ("ProgramFiles(x86)", "ProgramFiles", "LocalAppData")]
+    for rel in ("Microsoft/Edge/Application/msedge.exe", "Google/Chrome/Application/chrome.exe"):
+        for base in bases:
+            exe = Path(base) / rel if base else None
+            if exe and exe.exists():
+                try:
+                    subprocess.Popen([str(exe), "--app=" + url, "--start-maximized"], close_fds=True)
+                    return True
+                except OSError:
+                    continue
+    return False
+
+
+def open_ui(url):
+    if "--tab" in sys.argv or not open_app_window(url):   # --tab: 일반 브라우저 탭으로 열기
+        webbrowser.open(url)
+
+
 class Srv(ThreadingHTTPServer):
     # Windows 에서는 SO_REUSEADDR 가 있으면 같은 포트에 서버를 여러 개 켤 수 있고, 접속은 먼저 켠 (예전 코드의) 서버로 간다.
     # 그래서 업데이트 후에도 변화가 없어 보인다 -> Windows 에서는 끈다.
@@ -383,9 +406,9 @@ def main():
             sys.exit(1)
     srv = SRV
     url = f"http://localhost:{PORT}"
-    print("수업 슬라이드 메이커 실행 중 ->", url, "(끝내려면 이 창을 닫거나 Ctrl+C)")
+    print("엠클래스수학과학전문학원 실행 중 ->", url, "(끝내려면 이 창을 닫거나 Ctrl+C)")
     if "--no-browser" not in sys.argv:
-        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.8, lambda: open_ui(url)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

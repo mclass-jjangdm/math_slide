@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo ==============================================
-echo   Class Slide Maker  (math_slide)
+echo   math_slide
 echo ==============================================
 
 rem Prefer a stable Python 3.10-3.13. (Python 3.14+ preview builds may not work with PyMuPDF)
@@ -29,9 +29,9 @@ if not exist ".venv\Scripts\python.exe" (
 if errorlevel 1 goto err
 
 echo.
-echo The browser will open. To quit, press Ctrl+C in this window.
+echo The app window will open. To quit, click the Power button in the app (top right) or close this window.
 ".venv\Scripts\python.exe" mathslide\server.py %*
-pause
+if errorlevel 1 pause
 exit /b 0
 
 :err
