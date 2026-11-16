@@ -27,26 +27,37 @@ def _all_spans(page):
                 yield ln, sp
 
 
+def _num_lines(page):
+    """숫자만으로 된 줄(예: 658, 0884)과 그 글자 모양(크기, 글꼴), 줄 상자.
+    '0884'처럼 앞의 0과 나머지가 색·조각이 달라 글자 조각이 여러 개여도 한 줄 전체로 본다."""
+    for b in page.get_text("dict")["blocks"]:
+        for ln in b.get("lines", []):
+            spans = [s for s in ln["spans"] if s["text"].strip()]
+            if not spans:
+                continue
+            t = "".join(s["text"] for s in spans).strip()
+            if NUM_RE.fullmatch(t):
+                sp = max(spans, key=lambda s: (s["size"], len(s["text"])))
+                yield t, (round(sp["size"]), sp["font"]), ln["bbox"]
+
+
 def find_number_style(doc):
     sizes, cands = [], []
     for pn, page in enumerate(doc):
         H = page.rect.height
         for ln, sp in _all_spans(page):
             t = sp["text"].strip()
-            if not t:
-                continue
-            sizes.extend([sp["size"]] * len(t))
-            line_text = "".join(s["text"] for s in ln["spans"]).strip()
-            if NUM_RE.fullmatch(t) and line_text == t:
-                y0 = sp["bbox"][1]
-                if HEADER_Y * H < y0 < FOOTER_Y * H:
-                    cands.append((pn, t, sp))
+            if t:
+                sizes.extend([sp["size"]] * len(t))
+        for t, key, bb in _num_lines(page):
+            if HEADER_Y * H < bb[1] < FOOTER_Y * H:
+                cands.append((pn, t, key))
     if not sizes or not cands:
         return None
     body = statistics.median(sizes)
     groups = defaultdict(list)
     for c in cands:
-        groups[(round(c[2]["size"]), c[2]["font"])].append(c)
+        groups[c[2]].append(c)
     best, best_score = None, 0
     for key, items in groups.items():
         if key[0] < body * 1.25 or len(items) < 2:
@@ -138,13 +149,9 @@ def find_big_numbers(doc, style):
     out = {}
     for pn, page in enumerate(doc):
         H = page.rect.height
-        for ln, sp in _all_spans(page):
-            t = sp["text"].strip()
-            line_text = "".join(s["text"] for s in ln["spans"]).strip()
-            if (NUM_RE.fullmatch(t) and line_text == t
-                    and (round(sp["size"]), sp["font"]) == style
-                    and HEADER_Y * H < sp["bbox"][1] < FOOTER_Y * H):
-                out.setdefault(pn, []).append((t, sp["bbox"]))
+        for t, key, bb in _num_lines(page):
+            if key == style and HEADER_Y * H < bb[1] < FOOTER_Y * H:
+                out.setdefault(pn, []).append((t, bb))
     return out
 
 

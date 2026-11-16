@@ -9,3 +9,4 @@ __pycache__/
 testdata/*.pdf
 testdata/*.png
 testdata/yj/
+testdata/gm/
