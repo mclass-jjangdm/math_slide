@@ -7,6 +7,7 @@ import hashlib
 import json
 import mimetypes
 import re
+import os
 import sys
 import threading
 import time
@@ -65,8 +66,31 @@ def number_ids(problems):
     return problems
 
 
+def _unedited(cur, auto):
+    """사용자가 손대지 않은 검출 결과인가? (자동 검출 결과 사본과 같거나, 사본이 없으면 흔적이 없는 경우)"""
+    if auto is not None:
+        return cur == auto
+    return not any(p.get("figs") or p.get("figV") or p.get("view") or p.get("answer") or not p.get("on", True) for p in cur)
+
+
+def refresh_detection(pid, force=False):
+    """문제 영역이 없거나, 검출 규칙이 새로워졌는데 사용자가 고친 것이 없으면 다시 검출한다."""
+    d = pdir(pid)
+    meta = read_json(d / "meta.json", {})
+    cur = read_json(d / "problems.json", None)
+    stale = meta.get("detect_version") != detect.DETECT_VERSION
+    if cur is None or force or (stale and _unedited(cur, read_json(d / "auto.json", None))):
+        with LOCK:
+            new = number_ids(detect.detect(get_doc(pid)))
+        write_json(d / "problems.json", new)
+        write_json(d / "auto.json", new)
+    meta["detect_version"] = detect.DETECT_VERSION
+    write_json(d / "meta.json", meta)
+
+
 def project_info(pid):
     d = pdir(pid)
+    refresh_detection(pid)
     meta = read_json(d / "meta.json", {})
     doc = get_doc(pid)
     return {
@@ -90,10 +114,11 @@ def create_project(name, data):
         _docs[pid] = pymupdf.open(str(d / "src.pdf"))
         doc = _docs[pid]
         scanned = sum(len(p.get_text()) for p in doc) < 20 * max(1, len(doc))
-        meta = {"name": name, "pages": len(doc), "scanned": scanned, "created": time.time()}
+        meta = read_json(d / "meta.json", {})
+        meta.update({"name": name, "pages": len(doc), "scanned": scanned})
+        meta.setdefault("created", time.time())
         write_json(d / "meta.json", meta)
-        if not (d / "problems.json").exists():
-            write_json(d / "problems.json", number_ids(detect.detect(doc)))
+    refresh_detection(pid)   # 새로 올렸거나 규칙이 바뀌었으면(사용자가 고친 게 없을 때) 다시 검출
     return pid
 
 
@@ -203,6 +228,13 @@ class H(BaseHTTPRequestHandler):
                 return self.send(200, f.read_bytes(), ct + ("; charset=utf-8" if ct.startswith("text") else ""),
                                  {"Cache-Control": "no-cache"})   # 화면 파일은 항상 최신으로
 
+            if path == "/api/shutdown" and method == "POST":
+                if self.headers.get("X-Quit") != "1":   # 다른 웹페이지가 마음대로 끄지 못하게 한다
+                    return self.send(403, {"error": "forbidden"})
+                self.send(200, {"ok": True})
+                threading.Thread(target=lambda: (time.sleep(.3), SRV.shutdown()), daemon=True).start()
+                return
+
             if path == "/api/upload" and method == "POST":
                 pid = create_project(unquote(q.get("name", "문제집.pdf")), self.body())
                 return self.send(200, project_info(pid))
@@ -229,6 +261,7 @@ class H(BaseHTTPRequestHandler):
                     with LOCK:
                         ps = number_ids(detect.detect(get_doc(pid)))
                     write_json(d / "problems.json", ps)
+                    write_json(d / "auto.json", ps)
                     return self.send(200, ps)
                 if rest == "figs" and method == "GET":   # 문제 안의 그래프 후보
                     clip = tuple(float(v) for v in q["r"].split(","))
@@ -291,10 +324,50 @@ class H(BaseHTTPRequestHandler):
         self.route("PUT")
 
 
+class Srv(ThreadingHTTPServer):
+    # Windows 에서는 SO_REUSEADDR 가 있으면 같은 포트에 서버를 여러 개 켤 수 있고, 접속은 먼저 켠 (예전 코드의) 서버로 간다.
+    # 그래서 업데이트 후에도 변화가 없어 보인다 -> Windows 에서는 끈다.
+    allow_reuse_address = os.name != "nt"
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):   # 브라우저가 연결을 끊을 때 나오는 긴 오류 출력은 무시
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
+SRV = None
+
+
+def _ask_old_server_to_quit():
+    """이미 켜져 있는 이전 서버가 있으면 끄도록 부탁한다 (새 코드를 쓰려면 서버를 다시 켜야 하므로)."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/shutdown", data=b"", method="POST", headers={"X-Quit": "1"})
+        urllib.request.urlopen(req, timeout=3)
+        return True
+    except Exception:
+        return False
+
+
 def main():
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+    global SRV
+    for attempt in range(2):
+        try:
+            SRV = Srv(("127.0.0.1", PORT), H)
+            break
+        except OSError:
+            if attempt == 0 and _ask_old_server_to_quit():
+                print("이미 실행 중이던 이전 서버를 종료하고 새로 시작합니다.")
+                time.sleep(1.5)
+                continue
+            print("\n[안내] 이미 이 프로그램이 켜져 있습니다 (포트 %d 사용 중)." % PORT)
+            print("  - 작업표시줄에 최소화된 검은 창(이전 실행)을 모두 닫고 다시 실행해 주세요.")
+            print("  - 코드를 업데이트(git pull)한 뒤에는 이전 창을 닫아야 새 기능이 적용됩니다.")
+            sys.exit(1)
+    srv = SRV
     url = f"http://localhost:{PORT}"
-    print("수업 슬라이드 메이커 실행 중 ->", url, "(끝내려면 이 창에서 Ctrl+C)")
+    print("수업 슬라이드 메이커 실행 중 ->", url, "(끝내려면 이 창을 닫거나 Ctrl+C)")
     if "--no-browser" not in sys.argv:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

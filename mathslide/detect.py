@@ -15,6 +15,7 @@ from collections import defaultdict
 
 import pymupdf
 
+DETECT_VERSION = 2   # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
