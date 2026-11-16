@@ -237,7 +237,7 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
   <div class="menu" id="mColor"><div id="colLabel"></div><div id="sws"></div><div id="szs"></div></div>
   <div id="objpop"></div>
   <div id="cur"></div>
-  <div id="figbar">그래프 부분을 드래그해서 고르세요 (여러 개 가능) <button id="figDone">완료</button></div>
+  <div id="figbar">확대할 그래프 부분을 드래그해서 고르세요 (여러 개 가능) <button id="figDone">완료</button></div>
   <div class="menu" id="mMore">
     <button id="tTimer">⏱<br>타이머</button>
     <button id="tTheme">🌓<br>배경색</button>
@@ -558,7 +558,11 @@ async function toggleFig() {
   if (!p.figs.length) { toast('그래프를 자동으로 찾지 못했어요. 그래프 부분을 드래그해서 고르세요'); startFigSel(); return }
   p.figOn = true; buildFigs(); buildObjPop(); saveProblems(); toast(`그래프 ${p.figs.length}개를 크게 보여 줘요. 그래프를 누르면 크기·위치를 바꿀 수 있어요`);
 }
-function startFigSel() { selectObj(null); setTool('fig'); $('#figbar').style.display = 'flex' }
+function startFigSel() {
+  const p = cur();
+  if (!p.figOn) { p.figs = []; p.figV = []; buildFigs() }   // 숨겨 둔(보이지 않는) 그래프는 비우고, 지금 고르는 것만 나오게 한다
+  selectObj(null); setTool('fig'); $('#figbar').style.display = 'flex'
+}
 function finishFigSel() { $('#figbar').style.display = 'none'; setTool('sel'); const p = cur(); if (p.figOn && p.figs && p.figs.length) selectObj('fig', p.figs.length - 1) }
 $('#figDone').onclick = finishFigSel;
 // 수업 중 직접 고르기: 문제 위를 드래그하면 그 부분이 그래프로 추가된다
@@ -647,10 +651,10 @@ function buildObjPop() {
   if (P.sel === 'prob') {
     add('📌<br>전체 적용', applyAllView); gap();
     add(P.zoom ? '🔍<br>원래대로' : '🔍<br>크게 보기', toggleZoom, P.zoom);
-    add(hasFig ? '📈<br>그래프 숨김' : '📈<br>그래프 확대', toggleFig, hasFig);
-    add('▭<br>그래프 추가', startFigSel);
+    add(hasFig ? '📈<br>그래프 숨김' : '📈<br>그래프 자동 확대', toggleFig, hasFig);
+    add(hasFig ? '▭<br>그래프 더 추가' : '▭<br>직접 선택', startFigSel);
     if (p.answer || p.mask) add(P.ans ? '✅<br>정답 숨김' : '✅<br>정답·해설', toggleAns, P.ans);
-  } else { gap(); add('🗑<br>이 그래프 삭제', deleteFig); add('▭<br>그래프 추가', startFigSel); add('✕<br>모두 숨김', toggleFig) }
+  } else { gap(); add('🗑<br>이 그래프 삭제', deleteFig); add('▭<br>그래프 더 추가', startFigSel); add('✕<br>모두 숨김', toggleFig) }
 }
 function updateSelUI() {
   const box = $('#selbox'), pop = $('#objpop');
