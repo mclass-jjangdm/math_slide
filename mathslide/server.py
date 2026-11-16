@@ -7,6 +7,7 @@ import hashlib
 import json
 import mimetypes
 import re
+import shutil
 import os
 import sys
 import threading
@@ -248,6 +249,18 @@ class H(BaseHTTPRequestHandler):
                         items.append({"id": d.name, "name": m["name"], "pages": m["pages"], "problems": n})
                 return self.send(200, items)
 
+            md = re.fullmatch(r"/api/p/([0-9a-f]{10})", path)
+            if md and method == "DELETE":   # 최근 작업 삭제: 이 작업의 PDF 사본·잘라낸 그림·필기·설정을 지운다 (원본 PDF는 그대로)
+                pid = md.group(1)
+                with LOCK:
+                    doc = _docs.pop(pid, None)
+                    if doc is not None:
+                        doc.close()
+                    shutil.rmtree(pdir(pid), ignore_errors=True)
+                if pdir(pid).exists():
+                    raise OSError("폴더를 지우지 못했습니다. 다른 프로그램이 파일을 쓰고 있는지 확인하세요")
+                return self.send(200, {"ok": True})
+
             m = re.fullmatch(r"/api/p/([0-9a-f]{10})/(.+)", path)
             if m:
                 pid, rest = m.groups()
@@ -322,6 +335,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         self.route("PUT")
+
+    def do_DELETE(self):
+        self.route("DELETE")
 
 
 class Srv(ThreadingHTTPServer):

@@ -25,12 +25,17 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
 #drop.over,#drop:hover{border-color:var(--acc);background:var(--acc2)}
 #drop b{font-size:18px}
 #drop .small{color:var(--mute);margin-top:8px;font-size:14px}
-#recent{width:min(640px,100%);margin-top:28px}
+#recent{width:min(1000px,100%);margin-top:28px}
 #recent h3{font-size:14px;color:var(--mute);margin:0 0 8px}
-.rec{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
-.rec:hover{border-color:var(--acc)}
-.rec .n{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rec .m{color:var(--mute);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:16px}
+.card{position:relative;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:.12s}
+.card:hover{border-color:var(--acc);box-shadow:0 6px 18px rgba(40,60,120,.16);transform:translateY(-2px)}
+.card .th{aspect-ratio:3/4;background:#e9ecf3;overflow:hidden}
+.card .th img{display:block;width:100%;height:100%;object-fit:cover;object-position:top}
+.card .nm{padding:10px 12px 2px;font-weight:600;font-size:14px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
+.card .mt{padding:0 12px 11px;color:var(--mute);font-size:12.5px}
+.card .x{position:absolute;top:8px;right:8px;width:30px;height:30px;padding:0;border-radius:50%;background:rgba(255,255,255,.94);border:1px solid #cfd4e0;color:#666;font-size:14px;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+.card .x:hover{background:#fdecee;color:var(--bad);border-color:#f0b7be}
 #busy{display:none;position:fixed;inset:0;background:rgba(255,255,255,.8);z-index:50;align-items:center;justify-content:center;font-size:18px;font-weight:600}
 
 /* ---------- 검수 ---------- */
@@ -83,6 +88,9 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
 #figbar{position:fixed;top:14px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:12px;background:rgba(32,34,44,.97);border:1px solid #4dd8ff;color:#eee;border-radius:14px;padding:8px 10px 8px 18px;z-index:35;font-size:16px}
 #figbar button{background:var(--acc);color:#fff;border:0;border-radius:10px;height:42px;padding:0 18px;font-size:16px}
 #tb,.menu,#objpop,#pop,#figbar{cursor:default}
+/* 필기 중 펜 위치를 보여 주는 원: 지금 그어질 선의 굵기·색과 같다. 운영체제 커서 대신 프로그램이 그린다 */
+#cur{position:fixed;left:0;top:0;display:none;pointer-events:none;z-index:36;border-radius:50%;box-sizing:border-box;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.75),inset 0 0 0 1px rgba(0,0,0,.35)}
+#cur::after{content:'';position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--c,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.7)}
 #ink{position:absolute;left:0;top:0;width:1920px;height:1080px;touch-action:none;cursor:crosshair}
 #ans{display:none}
 #badge{position:absolute;right:28px;top:20px;font-size:30px;color:#888;font-variant-numeric:tabular-nums;pointer-events:none;opacity:.8}
@@ -116,6 +124,7 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
 .menu button{background:#2c2f3d;color:#eee;border:1px solid #444;min-width:68px;height:46px;border-radius:10px;font-size:12px;line-height:1.2;padding:0 8px}
 .menu button:hover{background:#3a3e52}
 .menu button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.menu button small{font-size:11px;opacity:.8}
 .menu button:disabled{opacity:.35}
 #mColor{flex-direction:column}
 #colLabel{text-align:center;color:#aab;font-size:13px}
@@ -227,15 +236,22 @@ input[type=text]{font:inherit;border:1px solid var(--line);border-radius:8px;pad
   <!-- 펼침 메뉴 -->
   <div class="menu" id="mColor"><div id="colLabel"></div><div id="sws"></div><div id="szs"></div></div>
   <div id="objpop"></div>
+  <div id="cur"></div>
   <div id="figbar">그래프 부분을 드래그해서 고르세요 (여러 개 가능) <button id="figDone">완료</button></div>
   <div class="menu" id="mMore">
     <button id="tTimer">⏱<br>타이머</button>
     <button id="tTheme">🌓<br>배경색</button>
+    <button id="tDevB" data-menu="mDevice" title="이 컴퓨터에서 쓰는 필기 장치">🖱<br>필기 장치</button>
     <button id="tFull">⛶<br>전체화면</button>
     <button id="tClear">🗑<br>모든 필기 삭제</button>
     <button id="tHide">⌄<br>메뉴 숨김</button>
     <button id="tSaveB" data-menu="mSave">💾<br>저장</button>
     <button id="tExit">✕<br>나가기</button>
+  </div>
+  <div class="menu" id="mDevice">
+    <div style="width:100%;text-align:center;color:#aab;font-size:13px">이 컴퓨터의 필기 장치 (한 번 고르면 기억해요)</div>
+    <button id="tDevBoard">🖥<br>전자칠판<br><small>위치 원 없음</small></button>
+    <button id="tDevWacom">✏<br>와콤 태블릿<br><small>펜 위치 원 표시</small></button>
   </div>
   <div class="menu" id="mShape">
     <button id="tLine">／<br>직선</button>
@@ -272,13 +288,22 @@ const ansUrl = (p, dpi = 200) => `/api/p/${proj.id}/crop.png?n=${p.answer.page}&
 async function loadRecent() {
   try {
     const list = await (await api('/projects')).json();
-    $('#recent').innerHTML = list.length ? '<h3>최근 작업</h3>' : '';
+    const box = $('#recent');
+    box.innerHTML = list.length ? '<h3>최근 작업</h3><div class="grid"></div>' : '';
+    const grid = box.querySelector('.grid');
     list.forEach(it => {
-      const d = document.createElement('div'); d.className = 'rec';
-      d.innerHTML = `<span class="n"></span><span class="m">${it.pages}쪽 · 문제 ${it.problems}개</span>`;
-      d.querySelector('.n').textContent = '📄 ' + it.name;
-      d.onclick = () => openProject(it.id);
-      $('#recent').appendChild(d);
+      const c = document.createElement('div'); c.className = 'card';
+      c.innerHTML = '<div class="th"><img loading="lazy" alt=""></div><button class="x" title="최근 작업에서 삭제">✕</button><div class="nm"></div><div class="mt"></div>';
+      c.querySelector('img').src = `/api/p/${it.id}/page.png?n=0&dpi=45`;
+      c.querySelector('.nm').textContent = it.name.replace(/\.pdf$/i, '');
+      c.querySelector('.mt').textContent = `${it.pages}쪽 · 문제 ${it.problems}개`;
+      c.querySelector('.x').onclick = async e => {
+        e.stopPropagation();
+        if (!confirm(`"${it.name}" 을(를) 최근 작업에서 삭제할까요?\n\n이 작업의 필기와 설정도 함께 지워져요.\n(원본 PDF 파일은 그대로 남아 있어요)`)) return;
+        try { await api(`/p/${it.id}`, { method: 'DELETE' }); toast('삭제했어요'); loadRecent() } catch (err) { alert('삭제하지 못했어요: ' + err.message) }
+      };
+      c.onclick = () => openProject(it.id);
+      grid.appendChild(c);
     });
   } catch (e) { }
 }
@@ -636,9 +661,14 @@ function updateSelUI() {
   pop.style.display = 'flex';
   const st = $('#stage').getBoundingClientRect(), sc = P.s, L = st.left + o.x * sc, T = st.top + o.y * sc, W = o.w * sc, H = o.h * sc;
   const pw = pop.offsetWidth, ph = pop.offsetHeight;
-  let left = o.kind === 'fig' ? L + W - pw : L; left = Math.max(8, Math.min(innerWidth - pw - 8, left));
-  let top = T - ph - 14; if (top < 8) top = T + H + 14;
-  if (top + ph > innerHeight - 100) top = Math.max(8, T + 14);   // 아래 도구줄과 겹치면 안쪽으로
+  // 선택 영역의 오른쪽 아래: 팝업의 오른쪽 끝을 선택 영역의 오른쪽 끝에 맞추고 바로 아래에 붙인다
+  //  팝업이 영역보다 넓으면 왼쪽으로 치우치지 않게, 오른쪽 아래 모서리에서 오른쪽으로 뻗게 한다
+  let left = pw <= W ? L + W - pw : L + W - 36; left = Math.max(8, Math.min(innerWidth - pw - 8, left));
+  let top = T + H + 16;
+  if (top + ph > innerHeight - 100) {                     // 아래 도구줄과 겹치거나 화면 밖이면
+    top = T - ph - 16;                                    //  → 위쪽으로
+    if (top < 8) top = Math.max(8, Math.min(innerHeight - ph - 100, T + H - ph - 16));   //  → 그래도 안 되면 영역 안쪽 오른쪽 아래
+  }
   pop.style.left = left + 'px'; pop.style.top = top + 'px';
 }
 function selDown(e) {
@@ -776,7 +806,38 @@ function setTheme(t) {
   P.theme = t; const el = $('#present'); el.classList.toggle('dark', t === 'dark'); el.classList.toggle('light', t === 'light'); if (cur()) redrawBase();
 }
 const colorCss = c => c === 'auto' ? 'linear-gradient(135deg,#fff 50%,#111 50%)' : c;
+// ---- 필기 중 펜 위치 표시 (와콤처럼 화면에 직접 쓰지 않는 장치용) ----
+// 장치 모드(컴퓨터마다 한 번 고르면 기억): 'board' 전자칠판 = 원 없음 / 'wacom' 와콤 태블릿 = 펜이 화면 위에 떠 있을 때 원으로 위치 표시
+const CUR_MODES = ['board', 'wacom'], CUR_LABEL = { board: '전자칠판 모드', wacom: '와콤 태블릿 모드' };
+let _saved = null; try { _saved = localStorage.getItem('curMode') } catch (e) { }
+P.curMode = (_saved === 'wacom' || _saved === 'on' || _saved === 'auto') ? 'wacom' : 'board';   // 예전 값(auto/on)은 와콤, 그 외·없음은 전자칠판
+function styleCur() {
+  const el = $('#cur'), t = P.tool; let d, col, bg;
+  if (!['pen', 'hl', 'er'].includes(t)) { el.style.display = 'none'; return }   // 다른 도구에서는 원을 치운다
+  if (t === 'er') { d = 44 * (P.s || 1); col = '#ffffff'; bg = 'rgba(255,255,255,.08)' }
+  else if (t === 'pen' || t === 'hl') { d = Math.max(14, SIZES[P.size] * (t === 'hl' ? 3.2 : 1) * (P.s || 1)); col = P.colors[t]; bg = `color-mix(in srgb, ${col} ${t === 'hl' ? 38 : 30}%, transparent)` }
+  else return;
+  el.style.width = el.style.height = d + 'px'; el.style.borderColor = col; el.style.background = bg; el.style.setProperty('--c', col);
+}
+function updateCur(e) {
+  const el = $('#cur');
+  const show = ['pen', 'hl', 'er'].includes(P.tool) && P.curMode === 'wacom' && (e.pointerType === 'mouse' || e.pointerType === 'pen');
+  if (!show || P.drawing || (e.buttons & 1)) { el.style.display = 'none'; return }   // 쓰는(닿아 있는) 동안에는 숨겨 시선을 뺏지 않는다
+  el.style.display = 'block'; el.style.transform = `translate(${e.clientX}px,${e.clientY}px) translate(-50%,-50%)`;
+}
+ink.addEventListener('pointermove', updateCur); ink.addEventListener('pointerdown', updateCur);
+ink.addEventListener('pointerleave', () => { $('#cur').style.display = 'none' });
+ink.addEventListener('pointerup', e => { if (e.pointerType === 'touch') $('#cur').style.display = 'none' });
+function refreshDevBtns() { $('#tDevBoard').classList.toggle('on', P.curMode === 'board'); $('#tDevWacom').classList.toggle('on', P.curMode === 'wacom') }
+function setDevice(m) {
+  P.curMode = m; try { localStorage.setItem('curMode', m) } catch (e) { }
+  refreshDevBtns(); $('#cur').style.display = 'none';
+  toast(m === 'wacom' ? '와콤 태블릿: 펜이 화면 위에 떠 있을 때 위치를 원으로 보여 줘요 (쓰는 동안은 숨겨요)' : '전자칠판: 펜 위치 원을 보이지 않아요');
+}
+$('#tDevBoard').onclick = () => setDevice('board'); $('#tDevWacom').onclick = () => setDevice('wacom');
+refreshDevBtns();
 function buildBar() {
+  styleCur();
   $('#colLabel').textContent = { pen: '펜', hl: '형광펜', shape: '도형' }[colorKey()] + ' 색 · 굵기';
   const s = $('#sws'); s.innerHTML = '';
   COLORS.forEach(c => { const b = document.createElement('button'); b.className = 'sw' + (c === curColor() ? ' on' : ''); b.style.background = colorCss(c); b.onclick = () => { const k = colorKey(); P.colors[k] = c; if (P.tool === 'sel' || P.tool === 'er' || P.tool === 'fig') setTool(k); buildBar() }; s.appendChild(b) });
