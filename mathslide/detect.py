@@ -11,11 +11,11 @@
 """
 import re
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 2   # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 4   # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -42,7 +42,20 @@ def _num_lines(page):
                 yield t, (round(sp["size"]), sp["font"]), ln["bbox"]
 
 
-def find_number_style(doc):
+def _looks_like_page_numbers(items):
+    """쪽 번호인가? 모든 쪽에서 같은 높이(위·아래 가장자리)에 있고, 번호가 쪽 순서대로 늘어나면 쪽 번호로 본다.
+    (홀수쪽은 오른쪽, 짝수쪽은 왼쪽에 찍히는 경우가 많아 가로 위치는 따지지 않는다)"""
+    if len(items) < 3:
+        return False
+    cells = Counter(round(it[3][1] / 12) for it in items)
+    if cells.most_common(1)[0][1] / len(items) < 0.6:
+        return False
+    if not all(it[3][1] < 0.14 * it[4] or it[3][1] > 0.88 * it[4] for it in items):
+        return False   # 위·아래 가장자리가 아니면 쪽 번호가 아니다
+    return len({it[0] for it in items}) >= 3   # 서로 다른 세 쪽 이상에 반복
+
+
+def find_number_style(doc, allow_page_like=False):
     sizes, cands = [], []
     for pn, page in enumerate(doc):
         H = page.rect.height
@@ -52,7 +65,7 @@ def find_number_style(doc):
                 sizes.extend([sp["size"]] * len(t))
         for t, key, bb in _num_lines(page):
             if HEADER_Y * H < bb[1] < FOOTER_Y * H:
-                cands.append((pn, t, key))
+                cands.append((pn, t, key, bb, H))
     if not sizes or not cands:
         return None
     body = statistics.median(sizes)
@@ -63,6 +76,8 @@ def find_number_style(doc):
     for key, items in groups.items():
         if key[0] < body * 1.25 or len(items) < 2:
             continue
+        if not allow_page_like and _looks_like_page_numbers(items):
+            continue   # 문제 번호가 아니라 쪽 번호(머리말·꼬리말)
         # 페이지당 평균 개수가 적당하고 개수가 많은 묶음 우선
         if len(items) > best_score:
             best, best_score = key, len(items)
@@ -146,6 +161,112 @@ def find_markers(doc):
     return out
 
 
+PLAIN_RE = re.compile(r"^\s*(\d{1,3})\s*[.)]\s*$")
+
+
+def find_plain_markers(doc):
+    """모의고사처럼 문제 글 바로 앞에 '5.' '18.' 같은 번호가 따로 인쇄된 경우.
+    첫 글자 조각이 '숫자.' 뿐인 줄을 모아, (글꼴·크기)가 같은 묶음 중 가장 많고 순서대로 늘어나는 것을 문제 번호로 본다."""
+    groups = defaultdict(list)
+    for pn, page in enumerate(doc):
+        H, W = page.rect.height, page.rect.width
+        for b in page.get_text("dict")["blocks"]:
+            for ln in b.get("lines", []):
+                spans = [sp for sp in ln["spans"] if sp["text"].strip()]
+                if not spans:
+                    continue
+                m = PLAIN_RE.match(spans[0]["text"])
+                if m and HEADER_Y * H < ln["bbox"][1] < FOOTER_Y * H:
+                    groups[(round(spans[0]["size"], 1), spans[0]["font"])].append((pn, m.group(1), ln["bbox"], W))
+    best, best_n = {}, 0
+    for key, items in groups.items():
+        if len(items) < 4 or len(items) <= best_n:
+            continue
+        order = sorted(items, key=lambda it: (it[0], 0 if it[2][0] < it[3] / 2 else 1, it[2][1]))
+        seq = [int(it[1]) for it in order]
+        steps = sum(1 for a, b in zip(seq, seq[1:]) if b == a + 1)
+        if steps < 0.5 * (len(seq) - 1):
+            continue   # 번호가 순서대로 늘어나지 않으면 문제 번호가 아니다 (목록 등)
+        best, best_n = {}, len(items)
+        for pn, label, bb, _w in items:
+            best.setdefault(pn, []).append((label, bb))
+    return best
+
+
+def find_footer_y(doc):
+    """모든 쪽에서 같은 자리에 반복되는 숫자 줄(쪽 번호 상자 등)이 있으면 그 위쪽 y를, 없으면 None."""
+    spots = []
+    for pn, page in enumerate(doc):
+        H = page.rect.height
+        for b in page.get_text("dict")["blocks"]:
+            for ln in b.get("lines", []):
+                t = "".join(sp["text"] for sp in ln["spans"]).strip()
+                if t.isdigit() and len(t) <= 3 and ln["bbox"][1] > 0.85 * H:
+                    spots.append((round(ln["bbox"][0] / 12), round(ln["bbox"][1] / 12), ln["bbox"][1]))
+    if not spots:
+        return None
+    cells = Counter((a, b) for a, b, _ in spots)
+    need = max(3, int(0.4 * len(doc)))
+    ys = [y for a, b, y in spots if cells[(a, b)] >= need]
+    return (min(ys) - 6) if ys else None
+
+
+SUBJECT_SHORT = {"확률과 통계": "확통", "확률과통계": "확통"}
+
+
+def label_sections(doc, problems):
+    """번호가 겹치면(예: 확통·미적분·기하가 모두 23~30번) 쪽 머리말의 선택과목 이름을 번호 앞에 붙인다."""
+    labels = [q["label"] for q in problems]
+    if len(labels) - len(set(labels)) < 3:
+        return
+    subject = {}
+    for pn, page in enumerate(doc):
+        H = page.rect.height
+        tops = []
+        for b in page.get_text("dict")["blocks"]:
+            for ln in b.get("lines", []):
+                if ln["bbox"][1] < 0.2 * H:
+                    sps = [sp for sp in ln["spans"] if sp["text"].strip()]
+                    if sps:
+                        tops.append(("".join(sp["text"] for sp in ln["spans"]).strip(), max(sp["size"] for sp in sps)))
+        for t, size in tops:
+            m = re.search(r"영역\s*[\(（]([^()（）]{1,14})[\)）]", t) or (re.fullmatch(r"[\(（]([^()（）]{1,14})[\)）]", t) if size >= 18 else None)
+            if m:
+                name = m.group(1).strip()
+                subject[pn] = SUBJECT_SHORT.get(name, name)
+                break
+    if not subject:
+        return
+    for q in problems:
+        q["label"] = f"{subject.get(q['page'], '공통')} {q['label']}"
+
+
+NOTICE_RE = re.compile(r"^[\s\*\u203b\u25e6\u2022\u25cb\u25cf\u25aa\u25a0\u25a1·]*확인\s*사항")
+
+
+def find_notices(page):
+    """'* 확인 사항' 같은 안내 상자(문제가 아님)의 위치를 찾는다. [(x0, x1, top)] — 상자 테두리가 있으면 테두리 위쪽까지."""
+    out = []
+    W = page.rect.width
+    lines = [ln for b in page.get_text("dict")["blocks"] for ln in b.get("lines", [])]
+    for ln in lines:
+        t = "".join(sp["text"] for sp in ln["spans"]).strip()
+        if not NOTICE_RE.match(t):
+            continue
+        x0, y0 = ln["bbox"][0], ln["bbox"][1]
+        top, bx0, bx1 = y0 - 10, x0 - 12, W
+        best = None
+        for d in page.get_drawings():   # 글자 바로 위(30pt 이내)에서 글자 쪽을 덮는 가로 테두리선
+            r = d["rect"]
+            if (r[3] - r[1]) < 1.5 and (r[2] - r[0]) > 80 and r[0] <= x0 + 2 and r[2] >= x0 and 0 < y0 - r[3] <= 30:
+                if best is None or r[1] > best[1]:
+                    best = r
+        if best is not None:
+            top, bx0, bx1 = best[1], best[0], best[2]
+        out.append((bx0, bx1, top))
+    return out
+
+
 def find_big_numbers(doc, style):
     out = {}
     for pn, page in enumerate(doc):
@@ -161,15 +282,24 @@ def detect(doc):
     style = find_number_style(doc)
     big = find_big_numbers(doc, style) if style else {}
     marks = find_markers(doc)
-    n_big, n_mark = sum(map(len, big.values())), sum(map(len, marks.values()))
-    if n_mark >= 2 and n_mark > n_big:
-        per_page = marks
-    elif n_big >= 1:
-        per_page = big
-    else:
+    plain = find_plain_markers(doc)
+    n_big, n_mark, n_plain = (sum(map(len, d.values())) for d in (big, marks, plain))
+    # 가장 많이 찾은 방법을 쓴다 (동점이면 큰 번호 > 낱말 글머리 > 굵은 번호 순)
+    options = [(n, -i, per) for i, (n, per, need) in enumerate([(n_big, big, 1), (n_mark, marks, 2), (n_plain, plain, 4)]) if n >= need]
+    if not options and style is None:   # 마지막 수단: 쪽 번호처럼 보여도 큰 숫자 글자를 문제 번호로 써 본다
+        style2 = find_number_style(doc, allow_page_like=True)
+        if style2:
+            big = find_big_numbers(doc, style2)
+            n_big = sum(map(len, big.values()))
+            if n_big >= 1:
+                options = [(n_big, 0, big)]
+    if not options:
         import detect_scan  # 글자 정보가 없으면 이미지 분석(스캔본)으로 넘어간다
         return detect_scan.detect_scanned(doc)
+    per_page = max(options)[2]
+    foot_y = find_footer_y(doc)
     problems = []
+    notices = {pn: find_notices(pg) for pn, pg in enumerate(doc)}   # 문제가 아닌 안내 상자 (예: '확인 사항')
     for pn, page in enumerate(doc):
         W, H = page.rect.width, page.rect.height
         nums = per_page.get(pn, [])
@@ -193,7 +323,10 @@ def detect(doc):
             col.sort(key=lambda n: n[1][1])
             for i, (t, bb) in enumerate(col):
                 top = bb[1] - 8
-                bottom = (col[i + 1][1][1] - 8) if i + 1 < len(col) else FOOTER_Y * H
+                bottom = (col[i + 1][1][1] - 8) if i + 1 < len(col) else min(FOOTER_Y * H, foot_y if foot_y else H)
+                for nx0, nx1, ntop in notices.get(pn, []):   # 안내 상자는 마지막 문제 영역에서 뺀다
+                    if nx1 > left and nx0 < right and ntop > top:
+                        bottom = min(bottom, ntop - 4)
                 region = pymupdf.Rect(left, max(0, top), right, bottom)
                 rect = _trim(page, region)
                 problems.append({
@@ -202,6 +335,7 @@ def detect(doc):
                     "on": True, "answer": None,
                     "mask": bool(answer_rects(page, rect)),   # 문제 안에 '(정답 : …)'이 인쇄돼 있으면 수업 화면에서 가린다
                 })
+    label_sections(doc, problems)
     return problems
 
 

@@ -75,6 +75,18 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 #quitscreen{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0f1117;color:#e8eaf2;text-align:center;font-size:20px;font-weight:700}
 #quitscreen small{color:var(--mute);font-size:14px;font-weight:400}
 
+.dlg{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(5,7,12,.62);backdrop-filter:blur(3px)}
+.dlgbox{width:min(360px,100%);padding:22px 20px 18px;border-radius:18px;background:#1b1e29;border:1px solid #343a50;box-shadow:0 30px 80px rgba(0,0,0,.65);animation:dlgin .14s ease-out}
+@keyframes dlgin{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.dlgtxt{font-size:16.5px;line-height:1.55;font-weight:600;color:#eef0fa;white-space:pre-line;text-align:center;margin-bottom:18px;word-break:keep-all}
+.dlgin{width:100%;margin:-4px 0 16px;padding:10px 12px;font-size:18px;text-align:center;border-radius:12px;border:1px solid #3a4054;background:#12141b;color:#fff}
+.dlgbtns{display:flex;gap:10px}
+.dlgbtns button{flex:1;min-height:48px;font-size:16px;font-weight:700;border-radius:12px;border:1px solid #3a4054;background:#262b3b;color:#e8eaf2}
+.dlgbtns button:hover{background:#30364a}
+.dlgbtns .dok{background:#ffe14d;border-color:#ffe14d;color:#15171e}
+.dlgbtns .dok:hover{background:#ffe96b}
+.dlgbtns .dok.danger{background:#ef4444;border-color:#ef4444;color:#fff}
+.dlgbtns .dok.danger:hover{background:#f56565}
 #busy{display:none;position:fixed;inset:0;background:rgba(6,8,12,.6);backdrop-filter:blur(6px);z-index:50;align-items:center;justify-content:center}
 #busy .bcard{display:flex;align-items:center;gap:16px;padding:20px 28px;border-radius:18px;background:#1b1e29;border:1px solid #31364a;box-shadow:0 24px 60px rgba(0,0,0,.6);font-size:16px;font-weight:700;color:#eef0fa;max-width:90vw}
 #busy .spin{flex:none;width:26px;height:26px;border-radius:50%;border:3px solid #2e3346;border-top-color:var(--chalk);animation:spin .8s linear infinite}
@@ -121,6 +133,11 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 #stage img.p{position:absolute;display:block;max-width:none;pointer-events:none;-webkit-user-drag:none}
 #present.dark #stage img.p{filter:invert(1) hue-rotate(180deg)}
 #figs{position:absolute;left:0;top:0}
+#paper{position:absolute;inset:0;display:none;background-image:linear-gradient(rgba(255,255,255,.12) 2px,transparent 2px),linear-gradient(90deg,rgba(255,255,255,.12) 2px,transparent 2px);background-size:60px 60px}
+#present.light #paper{background-image:linear-gradient(rgba(0,0,0,.14) 2px,transparent 2px),linear-gradient(90deg,rgba(0,0,0,.14) 2px,transparent 2px)}
+#grid .c .im.blank{filter:none;background:#15171e;border:1px dashed #444;display:grid;place-items:center;color:#777;font-size:13px}
+#side .addrow{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+#side .addrow button{padding:8px 4px;font-size:12.5px}
 #selbox{position:absolute;display:none;border:3px dashed #4dd8ff;border-radius:10px;pointer-events:none;z-index:4}
 #objpop{position:fixed;display:none;gap:6px;background:rgba(32,34,44,.97);border:1px solid #555;border-radius:14px;padding:6px;z-index:34;box-shadow:0 6px 22px rgba(0,0,0,.5);flex-wrap:wrap;max-width:min(780px,94vw)}
 #objpop button{background:#2c2f3d;color:#eee;border:1px solid #444;min-width:54px;height:38px;border-radius:10px;font-size:12px;line-height:1.15;padding:0 8px}
@@ -250,6 +267,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
       <div class="hd"><b id="cnt"></b><button id="bAll">전체 선택</button><button id="bNone">전체 해제</button></div>
       <div id="list"></div>
       <div class="ft">
+        <div class="addrow"><button id="bAddBlank" title="선택한 문제 다음에 빈 칠판 페이지를 넣습니다">＋ 빈 칠판 페이지</button><button id="bAddGrid" title="선택한 문제 다음에 모눈 페이지를 넣습니다">＋ 모눈 페이지</button></div>
         <div class="tools">
           <button id="bAns" disabled title="선택한 문제의 정답·해설 영역을 드래그로 지정합니다">📝<br>해설 영역</button>
           <button id="bSplit" title="선택한 문제 안의 (1)(2)(3)… 소문항을 각각 슬라이드 한 장으로 나눕니다">✂<br>소문항 나누기</button>
@@ -266,6 +284,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 <!-- ====== 수업 ====== -->
 <section id="present" class="view dark">
   <div id="stage">
+    <div id="paper"></div>
     <img class="p" id="pimg" alt="">
     <img class="p" id="ans" alt="">
     <div id="figs"></div>
@@ -278,6 +297,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
   <div id="tb">
     <span class="cnt" id="tCnt"></span>
     <button id="tGrid">▦<br>목록</button>
+    <button id="tBlankB" data-menu="mBlank" title="설명용 빈 페이지를 지금 슬라이드 다음에 끼워 넣습니다">＋<br>빈 페이지</button>
     <span class="sep"></span>
     <button id="tSel" class="on" title="선택: 문제·그래프를 눌러 이동/크기 조절 (s)">☝<br>선택</button>
     <button id="tPen">✏️<br>펜</button>
@@ -312,6 +332,12 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
     <button id="tDevBoard">🖥<br>전자칠판<br><small>위치 원 없음</small></button>
     <button id="tDevWacom">✏<br>와콤 태블릿<br><small>펜 위치 원 표시</small></button>
   </div>
+  <div class="menu" id="mBlank">
+    <div style="width:100%;text-align:center;color:#aab;font-size:13px">지금 슬라이드 <b>다음</b>에 빈 페이지를 끼워 넣어요</div>
+    <button id="tBlankPlain">⬛<br>빈 칠판</button>
+    <button id="tBlankGrid">▦<br>모눈 칠판</button>
+    <button id="tBlankDel" style="display:none">🗑<br>이 빈 페이지 삭제</button>
+  </div>
   <div class="menu" id="mShape">
     <button id="tLine">／<br>직선</button>
     <button id="tCircle">◯<br>원</button>
@@ -338,6 +364,31 @@ const api = (p, o) => fetch('/api' + p, o).then(async r => { if (!r.ok) { let m 
 let proj = null;                       // 현재 프로젝트
 let toastT; function toast(m, ms = 2200) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', ms) }
 function show(id) { document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === id)); }
+/* ---- 화면 가운데에 뜨는 확인창 (브라우저 기본 확인창은 창 맨 위에 떠서 전자칠판에서는 손이 닿기 어렵다) ---- */
+function dialog({ text, ok = '확인', cancel = '취소', danger = false, input = null, single = false }) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div'); ov.className = 'dlg';
+    ov.innerHTML = `<div class="dlgbox" role="dialog" aria-modal="true"><div class="dlgtxt"></div>${input !== null ? '<input class="dlgin" type="text">' : ''}<div class="dlgbtns">${single ? '' : '<button class="dc" type="button"></button>'}<button class="dok" type="button"></button></div></div>`;
+    ov.querySelector('.dlgtxt').textContent = text;
+    const okb = ov.querySelector('.dok'), cb = ov.querySelector('.dc'), inp = ov.querySelector('.dlgin');
+    okb.textContent = ok; if (danger) okb.classList.add('danger'); if (cb) cb.textContent = cancel; if (inp) inp.value = input;
+    const finish = yes => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(yes ? (inp ? inp.value : true) : (inp ? null : false)) };
+    const onKey = e => {   // 열려 있는 동안에는 다른 단축키(화살표 등)가 슬라이드를 넘기지 않게 막는다
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); finish(false) } else if (e.key === 'Enter') { e.preventDefault(); finish(true) }
+    };
+    document.addEventListener('keydown', onKey, true);
+    okb.onclick = () => finish(true); if (cb) cb.onclick = () => finish(false);
+    ov.onclick = e => { if (e.target === ov && !single) finish(false) };
+    document.body.appendChild(ov);
+    (inp || (danger && cb) || okb).focus();   // 삭제처럼 위험한 동작은 '취소'에 먼저 초점을 둔다
+    if (inp) inp.select();
+  });
+}
+const ask = (text, o = {}) => dialog({ text, ...o });
+const notice = text => dialog({ text, single: true });
+const askText = (text, def = '') => dialog({ text, input: def });
+
 function busy(m) {
   const b = $('#busy'); b.style.display = m ? 'flex' : 'none';
   b.innerHTML = m ? '<div class="bcard"><i class="spin"></i><span></span></div>' : ''; if (m) b.querySelector('span').textContent = m
@@ -363,8 +414,8 @@ async function loadRecent() {
       c.querySelector('.chip').textContent = `문제 ${it.problems}개`;
       c.querySelector('.x').onclick = async e => {
         e.stopPropagation();
-        if (!confirm(`"${it.name}" 을(를) 최근 작업에서 삭제할까요?\n\n이 작업의 필기와 설정도 함께 지워져요.\n(원본 PDF 파일은 그대로 남아 있어요)`)) return;
-        try { await api(`/p/${it.id}`, { method: 'DELETE' }); toast('삭제했어요'); loadRecent() } catch (err) { alert('삭제하지 못했어요: ' + err.message) }
+        if (!(await ask(`"${it.name}" 을(를) 최근 작업에서 삭제할까요?\n\n이 작업의 필기와 설정도 함께 지워져요.\n(원본 PDF 파일은 그대로 남아 있어요)`, { ok: '삭제', danger: true }))) return;
+        try { await api(`/p/${it.id}`, { method: 'DELETE' }); toast('삭제했어요'); loadRecent() } catch (err) { await notice('삭제하지 못했어요: ' + err.message) }
       };
       c.onclick = () => openProject(it.id);
       grid.appendChild(c);
@@ -374,7 +425,7 @@ async function loadRecent() {
 }
 $('#bHelp').onclick = () => { helpOn = !helpOn; refreshWelcome() };
 $('#bQuit').onclick = async () => {
-  if (!confirm('프로그램을 종료할까요?\n(필기와 작업은 저장되어 있어요)')) return;
+  if (!(await ask('프로그램을 종료할까요?\n(필기와 작업은 저장되어 있어요)', { ok: '종료' }))) return;
   try { await fetch('/api/shutdown', { method: 'POST', headers: { 'X-Quit': '1' } }) } catch (e) { }
   document.body.insertAdjacentHTML('beforeend', '<div id="quitscreen">프로그램을 종료했어요<small>이 창을 닫아 주세요</small></div>');
   try { window.close() } catch (e) { }
@@ -385,7 +436,7 @@ async function upload(f) {
   try {
     const info = await (await api('/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f })).json();
     busy(); enterReview(info);
-  } catch (e) { busy(); alert('열 수 없습니다: ' + e.message) }
+  } catch (e) { busy(); await notice('열 수 없습니다: ' + e.message) }
 }
 async function openProject(id) { busy('여는 중…'); try { enterReview(await (await api(`/p/${id}/info`)).json()) } finally { busy() } }
 $('#drop').onclick = () => $('#file').click();
@@ -437,14 +488,14 @@ function updateBanner() {
 }
 function selectProblem(id, jump) {
   rv.sel = id; const base = id && id[0] === 'a' ? id.slice(1) : id; const p = proj.problems.find(x => x.id === base);
-  if (jump && p && p.page !== rv.page) { rv.page = p.page; }
+  if (jump && p && !p.blank && p.page !== rv.page) { rv.page = p.page; }
   renderPage(); renderList(); const row = document.querySelector(`.row[data-id="${base}"]`); if (row) row.scrollIntoView({ block: 'nearest' });
 }
 function renderList() {
   const L = $('#list'); L.innerHTML = '';
   proj.problems.forEach((p, i) => {
     const r = document.createElement('div'); r.className = 'row' + (rv.sel === p.id || rv.sel === 'a' + p.id ? ' sel' : ''); r.dataset.id = p.id;
-    r.innerHTML = `<input type="checkbox" ${p.on ? 'checked' : ''}><input type="text" value=""><span class="pg">${p.page + 1}쪽</span>${p.answer ? '<span class="bd">해설</span>' : ''}${p.mask ? '<span class="bd" title="인쇄된 (정답 : …)을 수업 화면에서 가립니다">정답가림</span>' : ''}<button title="위로">↑</button><button title="아래로">↓</button><button title="삭제">✕</button>`;
+    r.innerHTML = `<input type="checkbox" ${p.on ? 'checked' : ''}><input type="text" value=""><span class="pg">${p.blank ? '빈 페이지' : (p.page + 1) + '쪽'}</span>${p.answer ? '<span class="bd">해설</span>' : ''}${p.mask ? '<span class="bd" title="인쇄된 (정답 : …)을 수업 화면에서 가립니다">정답가림</span>' : ''}<button title="위로">↑</button><button title="아래로">↓</button><button title="삭제">✕</button>`;
     const [cb, tx] = r.querySelectorAll('input'); tx.value = p.label;
     const [up, dn, del] = r.querySelectorAll('button');
     cb.onclick = e => { e.stopPropagation(); p.on = cb.checked; saveProblems(); renderPage(); updateCount() };
@@ -458,7 +509,10 @@ function renderList() {
   updateCount(); updateBanner();
 }
 function renumberKeepIds() { /* id는 그대로 둔다 (필기 기록이 id에 묶여 있음) */ }
-function updateCount() { const n = proj.problems.filter(p => p.on).length; $('#cnt').textContent = `문제 ${n}/${proj.problems.length}개 선택` }
+function updateCount() {
+  const real = proj.problems.filter(p => !p.blank), blanks = proj.problems.length - real.length;
+  $('#cnt').textContent = `문제 ${real.filter(p => p.on).length}/${real.length}개 선택` + (blanks ? ` · 빈 페이지 ${blanks}` : '')
+}
 function newId() { let n = 1; const used = new Set(proj.problems.map(p => p.id)); while (used.has('q' + n)) n++; return 'q' + n }
 function guessLabel(pn) {
   const same = proj.problems.filter(p => p.page === pn).map(p => parseInt(p.label)).filter(n => !isNaN(n));
@@ -468,7 +522,7 @@ function guessLabel(pn) {
 function insertSorted(p) {
   const W = proj.pages[p.page][0], key = x => [x.page, x.rect[0] + (x.rect[2] - x.rect[0]) / 2 < W / 2 ? 0 : 1, x.rect[1]];
   const cmp = (a, b) => { for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0 };
-  let idx = proj.problems.findIndex(x => cmp(key(x), key(p)) > 0); if (idx < 0) idx = proj.problems.length;
+  let idx = proj.problems.findIndex(x => !x.blank && cmp(key(x), key(p)) > 0); if (idx < 0) idx = proj.problems.length;
   proj.problems.splice(idx, 0, p);
 }
 (function boxInteraction() {
@@ -522,29 +576,37 @@ document.addEventListener('keydown', e => {
 });
 $('#pPrev').onclick = () => { if (rv.page > 0) { rv.page--; renderPage() } };
 $('#pNext').onclick = () => { if (rv.page < proj.pages.length - 1) { rv.page++; renderPage() } };
+function makeBlank(bg) { return { id: 'b' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36), blank: true, bg, label: '빈 페이지', on: true } }
+function addBlank(bg) {   // 선택한 문제 다음(없으면 맨 끝)에 빈 페이지를 넣는다
+  const sid = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); let idx = proj.problems.findIndex(p => p.id === sid);
+  idx = idx < 0 ? proj.problems.length : idx + 1; const nb = makeBlank(bg); proj.problems.splice(idx, 0, nb); saveProblems();
+  selectProblem(nb.id, false); toast(bg === 'grid' ? '모눈 페이지를 넣었어요' : '빈 칠판 페이지를 넣었어요');
+}
+$('#bAddBlank').onclick = () => addBlank('plain'); $('#bAddGrid').onclick = () => addBlank('grid');
 $('#bAll').onclick = () => { proj.problems.forEach(p => p.on = true); saveProblems(); renderPage(); renderList() };
 $('#bNone').onclick = () => { proj.problems.forEach(p => p.on = false); saveProblems(); renderPage(); renderList() };
 $('#bHome').onclick = () => { show('home'); loadRecent() };
 $('#bMore').onclick = e => { e.stopPropagation(); $('#rmenu').classList.toggle('on') };
 $('#rmenu').addEventListener('click', e => { if (e.target.closest('button')) $('#rmenu').classList.remove('on') });
 document.addEventListener('click', e => { if (!e.target.closest('.dd')) $('#rmenu').classList.remove('on') });
-$('#bAns').onclick = () => { const id = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); if (!id) return toast('먼저 목록이나 페이지에서 문제를 선택하세요'); rv.pickAns = id; updateBanner() };
+$('#bAns').onclick = () => { const id = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); if (!id) return toast('먼저 목록이나 페이지에서 문제를 선택하세요'); if ((proj.problems.find(x => x.id === id) || {}).blank) return toast('빈 페이지에는 해설 영역을 지정할 수 없어요'); rv.pickAns = id; updateBanner() };
 $('#bSplit').onclick = async () => {
   const id = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); if (!id) return toast('나눌 문제를 먼저 선택하세요');
+  if ((proj.problems.find(x => x.id === id) || {}).blank) return toast('빈 페이지는 소문항으로 나눌 수 없어요');
   await saveProblemsNow();
   const r = await (await api(`/p/${proj.id}/split`, { method: 'POST', body: JSON.stringify({ id }) })).json();
   if (!r.n) return toast('소문항 (1)(2)… 번호를 찾지 못했어요');
   proj.problems = r.problems; rv.sel = r.first; selectProblem(r.first, true); toast(`소문항 ${r.n}개로 나눴어요`);
 };
-$('#bRenum').onclick = () => {
+$('#bRenum').onclick = async () => {
   const id = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); const i = proj.problems.findIndex(p => p.id === id);
   if (i < 0) return toast('먼저 시작할 문제를 선택하세요');
-  let n = parseInt(proj.problems[i].label); if (isNaN(n)) { n = parseInt(prompt('이 문제의 번호는?', '1')); if (isNaN(n)) return }
+  let n = parseInt(proj.problems[i].label); if (isNaN(n)) { const v = await askText('이 문제의 번호는?', '1'); if (v === null) return; n = parseInt(v); if (isNaN(n)) return }
   for (let k = i; k < proj.problems.length; k++) proj.problems[k].label = String(n + k - i);
   saveProblems(); renderPage(); renderList(); toast(`${proj.problems[i].label}번부터 이어서 매겼어요`);
 };
 $('#bRedetect').onclick = async () => {
-  if (!confirm('지금까지 수정한 상자가 모두 사라지고 자동 검출 결과로 바뀝니다. 계속할까요?')) return;
+  if (!(await ask('지금까지 수정한 상자가 모두 사라지고 자동 검출 결과로 바뀝니다.\n계속할까요?', { ok: '다시 검출', danger: true }))) return;
   busy('다시 찾는 중…'); try { proj.problems = await (await api(`/p/${proj.id}/redetect`, { method: 'POST' })).json(); proj.problems.forEach(p => p.on = true); rv.sel = null; renderPage(); renderList() } finally { busy() }
 };
 $('#bHandout').onclick = () => { saveProblems(); setTimeout(() => window.open(`/api/p/${proj.id}/handout.pdf?per=${$('#selPer').value}`, '_blank'), 500) };
@@ -578,6 +640,7 @@ async function startPresent(i) {
 function saveProblemsNow() { clearTimeout(saveT); return api(`/p/${proj.id}/problems`, { method: 'PUT', body: JSON.stringify(proj.problems) }) }
 function fitStage() {
   const w = innerWidth, h = innerHeight, s = Math.min(w / SW, h / SH);
+  P.popPos = null;
   const st = $('#stage'); st.style.transform = `scale(${s})`; st.style.left = (w - SW * s) / 2 + 'px'; st.style.top = (h - SH * s) / 2 + 'px'; P.s = s;
 }
 // 문제 한 개가 슬라이드에서 차지하는 자리. 기본 배치 + 사용자가 옮기고 키운 값(p.view = {dx, dy, sc})
@@ -672,7 +735,7 @@ function objBoxes(withShapes) {   // 위에 그려진 것부터: 도형 → 그�
   const p = cur(), out = [], L = figLayout(p);
   if (withShapes) curStrokes().forEach((st, k) => { if (st.sh) out.unshift({ kind: 'shape', i: k, ...bboxOf(st.p) }) });
   for (let n = L.length - 1; n >= 0; n--) out.push({ kind: 'fig', i: L[n].i, x: L[n].x, y: L[n].y, w: L[n].w, h: L[n].h });
-  const b = placement(p, P.zoom); out.push({ kind: 'prob', x: b.x, y: b.y, w: b.w, h: b.h });
+  if (!p.blank) { const b = placement(p, P.zoom); out.push({ kind: 'prob', x: b.x, y: b.y, w: b.w, h: b.h }) }
   return out;
 }
 function nearShape(pt, st) {   // 도형은 안쪽이 아니라 '선 가까이'를 눌렀을 때만 잡는다 (도형 안에도 글을 쓸 수 있게)
@@ -684,7 +747,7 @@ function hitObj(pt) {
   const strokes = curStrokes();
   for (let k = strokes.length - 1; k >= 0; k--) if (strokes[k].sh && nearShape(pt, strokes[k])) return { kind: 'shape', i: k, ...bboxOf(strokes[k].p) };
   const pad = 12; return objBoxes().find(o => pt[0] >= o.x - pad && pt[0] <= o.x + o.w + pad && pt[1] >= o.y - pad && pt[1] <= o.y + o.h + pad) }
-function selectObj(kind, idx) { P.sel = kind; P.selIdx = idx || 0; buildObjPop(); updateSelUI() }
+function selectObj(kind, idx) { P.sel = kind; P.selIdx = idx || 0; P.popPos = null; buildObjPop(); updateSelUI() }   // 새로 선택할 때만 팝업 자리를 다시 정한다
 function layoutSel() { if (P.sel === 'shape') updateSelUI(); else if (P.sel === 'fig') layoutFigs(); else layoutImg($('#pimg'), cur()) }
 // 도형 이동·확대·축소: 점 m0 를 기준으로 f 배 하고 m1 으로 옮긴다
 function moveShape(m0, m1, f) {
@@ -703,11 +766,11 @@ function deleteFig() {   // 선택한 그래프 하나를 지운다 (잘못 고�
   if (!p.figs.length) p.figOn = false;
   buildFigs(); selectObj(null); saveProblems(); toast('그래프를 삭제했어요');
 }
-function applyAllView() {
-  const v = viewOf(); if (!confirm('지금 문제의 위치·크기를 모든 슬라이드에 적용할까요?')) return;
+async function applyAllView() {
+  const v = viewOf(); if (!(await ask('지금 문제의 위치·크기를\n모든 슬라이드에 적용할까요?', { ok: '모두 적용' }))) return;
   proj.problems.forEach(p => p.view = { dx: v.dx, dy: v.dy, sc: v.sc }); layoutImg($('#pimg'), cur()); saveProblems(); toast('모든 슬라이드에 적용했어요');
 }
-function toggleZoom() { P.zoom = !P.zoom; layoutImg($('#pimg'), cur()); buildObjPop() }
+function toggleZoom() { P.zoom = !P.zoom; P.popPos = null; layoutImg($('#pimg'), cur()); buildObjPop() }
 function toggleAns() {
   const p = cur(); P.ans = !P.ans;
   if (p.answer) $('#ans').style.display = P.ans ? 'block' : 'none';
@@ -746,7 +809,9 @@ function updateSelUI() {
     top = T - ph - 16;                                    //  → 위쪽으로
     if (top < 8) top = Math.max(8, Math.min(innerHeight - ph - 100, T + H - ph - 16));   //  → 그래도 안 되면 영역 안쪽 오른쪽 아래
   }
-  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+  // 크기를 키우거나 옮기는 동안 팝업이 따라다니지 않도록, 처음 정한 자리를 그대로 쓴다
+  if (!P.popPos) P.popPos = { left, top };
+  pop.style.left = Math.max(8, Math.min(innerWidth - pw - 8, P.popPos.left)) + 'px'; pop.style.top = Math.max(8, Math.min(innerHeight - ph - 8, P.popPos.top)) + 'px';
 }
 function selDown(e) {
   const pt = stagePt(e);
@@ -787,13 +852,31 @@ function layoutAns(img, p) {
 }
 function go(i) {
   P.i = Math.max(0, Math.min(P.slides.length - 1, i)); const p = cur();
-  const img = $('#pimg'); img.onload = () => layoutImg(img, p); img.src = cropUrl(p); layoutImg(img, p);
+  const img = $('#pimg');
+  if (p.blank) { img.onload = null; img.style.display = 'none'; img.removeAttribute('src') }   // 빈 페이지: 문제 그림 없음
+  else { img.style.display = ''; img.onload = () => layoutImg(img, p); img.src = cropUrl(p); layoutImg(img, p) }
+  $('#paper').style.display = (p.blank && p.bg === 'grid') ? 'block' : 'none';
+  $('#tBlankDel').style.display = p.blank ? 'inline-block' : 'none';
   const a = $('#ans'); a.style.display = 'none'; if (p.answer) { a.src = ansUrl(p); a.onload = () => layoutAns(a, p) }
   P.zoom = false; P.ans = false; setTool('sel');
   $('#badge').textContent = /^\d+$/.test(p.label) ? p.label + '번' : p.label; $('#tCnt').textContent = `${P.i + 1} / ${P.slides.length}`; document.querySelectorAll('.edge button').forEach(b => b.disabled = b.dataset.nav === '-1' ? P.i === 0 : P.i === P.slides.length - 1);
   fitStage(); redrawBase(); present_preload(); buildFigs();
 }
-function present_preload() { [1, 2].forEach(d => { const q = P.slides[P.i + d]; if (q) new Image().src = cropUrl(q) }) }
+// ---- 빈 페이지: 수업 중 개념 설명용으로 지금 슬라이드 다음에 끼워 넣는다 ----
+function insertBlank(bg) {
+  const p = cur(), idx = proj.problems.findIndex(x => x.id === p.id), nb = makeBlank(bg);
+  proj.problems.splice(idx + 1, 0, nb); P.slides = proj.problems.filter(x => x.on);
+  saveProblems(); go(P.slides.findIndex(x => x.id === nb.id)); setTool('pen');   // 곧바로 쓸 수 있게 펜으로
+}
+async function deleteBlank() {
+  const p = cur(); if (!p.blank) return;
+  if (!(await ask('이 빈 페이지를 삭제할까요?\n(쓴 내용도 함께 지워져요)', { ok: '삭제', danger: true }))) return;
+  const i = P.i; proj.problems = proj.problems.filter(x => x.id !== p.id); delete P.strokes[p.id]; P.slides = proj.problems.filter(x => x.on);
+  saveProblems(); saveStrokes(); toast('빈 페이지를 삭제했어요');
+  if (!P.slides.length) { $('#tExit').click(); return }
+  go(Math.min(i, P.slides.length - 1));
+}
+function present_preload() { [1, 2].forEach(d => { const q = P.slides[P.i + d]; if (q && !q.blank) new Image().src = cropUrl(q) }) }
 function drawStroke(ctx, s, theme) {
   const pts = s.p; if (!pts.length) return;
   ctx.save(); ctx.lineCap = ctx.lineJoin = 'round';
@@ -934,6 +1017,7 @@ function setTool(t) {
   $('#present').style.cursor = (t === 'pen' || t === 'hl' || t === 'er') ? 'none' : 'default';
 }
 $('#tSel').onclick = () => setTool('sel');
+$('#tBlankPlain').onclick = () => insertBlank('plain'); $('#tBlankGrid').onclick = () => insertBlank('grid'); $('#tBlankDel').onclick = deleteBlank;
 $('#tLine').onclick = () => { P.shape = 'line'; setTool('shape') };
 $('#tCircle').onclick = () => { P.shape = 'circle'; setTool('shape') };
 $('#tTri').onclick = () => { P.shape = 'tri'; setTool('shape') };
@@ -989,7 +1073,7 @@ $('#bPng').onclick = async () => {
 $('#tExit').onclick = () => { stopTimer(); saveStrokes(); document.fullscreenElement && document.exitFullscreen(); show('review'); renderPage(); renderList() };
 $('#tGrid').onclick = () => {
   const g = $('#gg'); g.innerHTML = '';
-  P.slides.forEach((p, i) => { const c = document.createElement('div'); c.className = 'c' + (i === P.i ? ' cur' : ''); c.innerHTML = `<span>${p.label}번</span><div class="im" style="background-image:url('${cropUrl(p, 70)}')"></div>`; c.onclick = () => { $('#grid').style.display = 'none'; go(i) }; g.appendChild(c) });
+  P.slides.forEach((p, i) => { const c = document.createElement('div'); c.className = 'c' + (i === P.i ? ' cur' : ''); c.innerHTML = `<span>${/^\d+$/.test(p.label) ? p.label + '번' : p.label}</span>` + (p.blank ? `<div class="im blank">${p.bg === 'grid' ? '▦ 모눈' : '빈 칠판'}</div>` : `<div class="im" style="background-image:url('${cropUrl(p, 70)}')"></div>`); c.onclick = () => { $('#grid').style.display = 'none'; go(i) }; g.appendChild(c) });
   $('#grid').style.display = 'block';
 };
 $('#grid').onclick = e => { if (e.target.id === 'grid') $('#grid').style.display = 'none' };
@@ -1030,6 +1114,15 @@ document.addEventListener('keydown', e => {
 function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src }) }
 // 슬라이드 한 장을 캔버스에 그린다: 배경 + 문제 + 확대한 그래프 + 필기
 async function paintSlide(c, p, strokeList, theme) {
+  if (p.blank) {   // 빈 페이지: 배경(+모눈)과 필기만
+    c.fillStyle = theme === 'dark' ? '#000' : '#fff'; c.fillRect(0, 0, SW, SH);
+    if (p.bg === 'grid') {
+      c.save(); c.strokeStyle = theme === 'dark' ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.14)'; c.lineWidth = 2; c.beginPath();
+      for (let x = 0; x <= SW; x += 60) { c.moveTo(x, 0); c.lineTo(x, SH) } for (let y = 0; y <= SH; y += 60) { c.moveTo(0, y); c.lineTo(SW, y) }
+      c.stroke(); c.restore();
+    }
+    strokeList.forEach(s => drawStroke(c, s, theme)); return;
+  }
   const img = await loadImg(cropUrl(p));
   c.fillStyle = theme === 'dark' ? '#000' : '#fff'; c.fillRect(0, 0, SW, SH);
   const b = placement(p, false);
@@ -1052,7 +1145,7 @@ async function exportSlides() {
     busy('PDF로 묶는 중…');
     const r = await api(`/p/${proj.id}/slides.pdf`, { method: 'POST', body: JSON.stringify({ images: out }) });
     const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = proj.name.replace(/\.pdf$/i, '') + '_슬라이드.pdf'; a.click();
-  } catch (e) { alert('내보내기 실패: ' + e.message) } finally { busy() }
+  } catch (e) { busy(); await notice('내보내기 실패: ' + e.message) } finally { busy() }
 }
 
 loadRecent();

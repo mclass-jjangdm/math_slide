@@ -157,7 +157,7 @@ def render_png(pid, pno, clip, dpi, mask=False):
 
 def make_handout(pid, per):
     """학생용 유인물: A4, 한 장에 per(1/2/4)문제, 풀이 공간 포함. 벡터 그대로 잘라 붙인다."""
-    problems = [p for p in read_json(pdir(pid) / "problems.json", []) if p.get("on", True)]
+    problems = [p for p in read_json(pdir(pid) / "problems.json", []) if p.get("on", True) and not p.get("blank")]   # 빈 페이지는 유인물에서 뺀다
     W, H, M = 595.0, 842.0, 34.0
     cols, rows = {1: (1, 1), 2: (1, 2), 4: (2, 2)}[per]
     cw, ch = (W - 2 * M) / cols, (H - 2 * M) / rows
@@ -246,7 +246,7 @@ class H(BaseHTTPRequestHandler):
                 for d in sorted(PROJECTS.iterdir(), key=lambda x: -x.stat().st_mtime):
                     m = read_json(d / "meta.json", None)
                     if m:
-                        n = len(read_json(d / "problems.json", []))
+                        n = len([q for q in read_json(d / "problems.json", []) if not q.get("blank")])
                         items.append({"id": d.name, "name": m["name"], "pages": m["pages"], "problems": n})
                 return self.send(200, items)
 
@@ -288,6 +288,8 @@ class H(BaseHTTPRequestHandler):
                     idx = next((i for i, p in enumerate(probs) if p["id"] == qid), None)
                     if idx is None:
                         raise ValueError("문제를 찾을 수 없습니다")
+                    if probs[idx].get("blank"):
+                        return self.send(200, {"n": 0, "problems": probs})
                     with LOCK:
                         new = detect.split_subitems(get_doc(pid)[probs[idx]["page"]], probs[idx]["rect"], probs[idx]["label"])
                     if len(new) < 2:
