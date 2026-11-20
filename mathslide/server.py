@@ -164,24 +164,51 @@ def make_handout(pid, per):
     out = pymupdf.open()
     with LOCK:
         src = get_doc(pid)
-        for i, p in enumerate(problems):
-            k = i % per
-            if k == 0:
-                page = out.new_page(width=W, height=H)
-            r, c = divmod(k, cols)
+        rects = [pymupdf.Rect(*p["rect"]) for p in problems]
+        # 글자 크기를 문제마다 맞추지 않고 모두 같은 배율로: 폭에 맞는 배율의 중앙값을 기준으로 한다.
+        fits = sorted((cw - 14) / r.width for r in rects)
+        s0 = min(1.5, fits[len(fits) // 2]) if fits else 1.0
+        pages, owner, k = [], None, 0   # owner[r][c] = 칸을 차지한 문제 번호(여러 칸에 걸칠 수 있음)
+
+        for i, (p, clip) in enumerate(zip(problems, rects)):
+            s = min(s0, (cw - 14) / clip.width)
+            n = max(1, -(-int(clip.height * s / 0.62 * 1000) // int(ch * 1000)))   # 풀이 공간까지 합쳐 필요한 칸 수
+            if n >= rows:
+                n = rows
+                s = min(s, 0.85 * rows * ch / clip.height)
+            # 순서를 지키면서 문제가 들어갈 첫 빈 자리를 찾는다 (세로로 n칸이 비어 있어야 함)
+            while True:
+                if owner is None or k >= rows * cols:
+                    page = out.new_page(width=W, height=H)
+                    owner = [[None] * cols for _ in range(rows)]
+                    pages.append(owner)
+                    k = 0
+                r, c = divmod(k, cols)
+                if r + n <= rows and all(owner[r + j][c] is None for j in range(n)):
+                    break
+                k += 1
+            for j in range(n):
+                owner[r + j][c] = i
+            k += 1
             x0, y0 = M + c * cw, M + r * ch
-            clip = pymupdf.Rect(*p["rect"])
-            s = min((cw - 14) / clip.width, (ch * 0.62) / clip.height, 1.5)
             dst = pymupdf.Rect(x0 + 4, y0 + 4, x0 + 4 + clip.width * s, y0 + 4 + clip.height * s)
             page.show_pdf_page(dst, src, p["page"], clip=clip)
             for ar in detect.answer_rects(src[p["page"]], clip):   # 정답 글자 가리기
                 page.draw_rect(pymupdf.Rect(dst.x0 + (ar.x0 - clip.x0) * s, dst.y0 + (ar.y0 - clip.y0) * s,
                                             dst.x0 + (ar.x1 - clip.x0) * s, dst.y0 + (ar.y1 - clip.y0) * s),
                                color=None, fill=(1, 1, 1))
-            if per > 1 and (c < cols - 1):
-                page.draw_line((x0 + cw, y0 + 4), (x0 + cw, y0 + ch - 4), color=(.8, .8, .8), width=.5, dashes="[3 3] 0")
-            if per > 1 and r < rows - 1:
-                page.draw_line((x0 + 4, y0 + ch), (x0 + cw - 4, y0 + ch), color=(.8, .8, .8), width=.5, dashes="[3 3] 0")
+        if per > 1:   # 구분선: 같은 문제가 차지한 칸 사이에는 긋지 않는다
+            for pno, ow in enumerate(pages):
+                page = out[pno]
+                for c in range(cols - 1):
+                    page.draw_line((M + (c + 1) * cw, M + 4), (M + (c + 1) * cw, M + rows * ch - 4),
+                                   color=(.8, .8, .8), width=.5, dashes="[3 3] 0")
+                for r in range(rows - 1):
+                    for c in range(cols):
+                        if ow[r][c] is not None and ow[r][c] == ow[r + 1][c]:
+                            continue
+                        page.draw_line((M + c * cw + 4, M + (r + 1) * ch), (M + (c + 1) * cw - 4, M + (r + 1) * ch),
+                                       color=(.8, .8, .8), width=.5, dashes="[3 3] 0")
         data = out.tobytes(garbage=3, deflate=True)
     return data
 
