@@ -196,6 +196,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 .ddm{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#1b1e29;border:1px solid #31364a;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.5);padding:10px;z-index:30;min-width:280px;flex-direction:column;gap:8px}
 .ddm.on{display:flex}
 .ddm .ddrow{display:flex;align-items:center;gap:8px;font-size:14px;flex-wrap:wrap}
+.ddm input[type=text]{flex:1;min-width:0;padding:7px 9px;border-radius:8px;border:1px solid #31364a;background:#12141b;color:var(--ink);font-size:13px}
 .ddm select{padding:6px;border-radius:8px;border:1px solid #31364a;background:#12141b;color:var(--ink)}
 #side .tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px}
 #side .tools button{padding:8px 2px;font-size:12px;line-height:1.35}
@@ -251,6 +252,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
       <button id="bMore">⋯ 더보기</button>
       <div class="ddm" id="rmenu">
         <button id="bRedetect" title="문제 영역을 처음부터 다시 찾습니다">↻ 자동 재검출</button>
+        <div class="ddrow"><input id="hTitle" type="text" maxlength="80" placeholder="유인물 제목 (머리글, 비우면 생략)" aria-label="유인물 제목"></div>
         <div class="ddrow">🖨 학생용 유인물
           <select id="selPer"><option value="1">1문제/쪽</option><option value="2" selected>2문제/쪽</option><option value="4">4문제/쪽</option></select>
           <button id="bHandout">PDF 만들기</button></div>
@@ -456,6 +458,7 @@ function enterReview(info) {
   proj = info; proj.problems.forEach(p => { if (p.on === undefined) p.on = true });
   rv.page = proj.problems.length ? proj.problems[0].page : 0; rv.sel = null; rv.pickAns = null;
   $('#rName').textContent = proj.name;
+  { let t = null; try { t = localStorage.getItem('hTitle:' + proj.id) } catch (e) {} $('#hTitle').value = t ?? proj.name.replace(/\.pdf$/i, '') }
   const w = $('#warn');
   if (proj.scanned && !proj.problems.length) { w.style.display = 'block'; w.textContent = '⚠ 스캔본으로 보이지만 문제 번호를 찾지 못했습니다. 페이지 위에서 드래그해 문제 영역을 직접 지정하세요.' }
   else if (proj.scanned) { w.style.display = 'block'; w.style.background = '#eaf1ff'; w.style.color = '#1d4ed8'; w.style.borderColor = '#c9d8fb'; w.textContent = '🔍 스캔본을 이미지 분석으로 인식했습니다. 번호를 읽은 값이 맞는지, 상자가 알맞은지 한 번 훑어보세요.' }
@@ -622,7 +625,10 @@ $('#bRedetect').onclick = async () => {
   if (!(await ask('지금까지 수정한 상자가 모두 사라지고 자동 검출 결과로 바뀝니다.\n계속할까요?', { ok: '다시 검출', danger: true }))) return;
   busy('다시 찾는 중…'); try { proj.problems = await (await api(`/p/${proj.id}/redetect`, { method: 'POST' })).json(); proj.problems.forEach(p => p.on = true); rv.sel = null; renderPage(); renderList() } finally { busy() }
 };
-$('#bHandout').onclick = () => { saveProblems(); setTimeout(() => window.open(`/api/p/${proj.id}/handout.pdf?per=${$('#selPer').value}`, '_blank'), 500) };
+$('#bHandout').onclick = () => {
+  const t = $('#hTitle').value.trim(); try { localStorage.setItem('hTitle:' + proj.id, t) } catch (e) {}
+  saveProblems(); setTimeout(() => window.open(`/api/p/${proj.id}/handout.pdf?per=${$('#selPer').value}&title=${encodeURIComponent(t)}`, '_blank'), 500)
+};
 window.addEventListener('resize', () => { if ($('#review').classList.contains('on')) renderPage(); if ($('#present').classList.contains('on')) fitStage() });
 $('#bPresent').onclick = () => startPresent(0);
 $('#bExport').onclick = () => exportSlides();

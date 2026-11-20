@@ -155,7 +155,7 @@ def render_png(pid, pno, clip, dpi, mask=False):
     return png
 
 
-def make_handout(pid, per):
+def make_handout(pid, per, title=""):
     """학생용 유인물: A4, 한 장에 per(1/2/4)문제, 풀이 공간 포함. 벡터 그대로 잘라 붙인다."""
     problems = [p for p in read_json(pdir(pid) / "problems.json", []) if p.get("on", True) and not p.get("blank")]   # 빈 페이지는 유인물에서 뺀다
     W, H, M = 595.0, 842.0, 34.0
@@ -209,6 +209,17 @@ def make_handout(pid, per):
                             continue
                         page.draw_line((M + c * cw + 4, M + (r + 1) * ch), (M + (c + 1) * cw - 4, M + (r + 1) * ch),
                                        color=(.8, .8, .8), width=.5, dashes="[3 3] 0")
+        # 머리글(제목)과 쪽 번호: 바깥 여백에 작은 회색 글씨
+        ff = Path(r"C:\Windows\Fonts\malgun.ttf")
+        total = len(out)
+        for pno in range(total):
+            page = out[pno]
+            kw = {"fontname": "mgn", "fontfile": str(ff)} if ff.exists() else {"fontname": "korea"}
+            if title:
+                page.insert_text((M, 24), title, fontsize=8.5, color=(.45, .45, .45), **kw)
+            label = f"{pno + 1} / {total}"
+            fnt = pymupdf.Font(fontfile=str(ff)) if ff.exists() else pymupdf.Font("helv")
+            page.insert_text(((W - fnt.text_length(label, fontsize=8.5)) / 2, H - 16), label, fontsize=8.5, color=(.45, .45, .45), **kw)
         data = out.tobytes(garbage=3, deflate=True)
     return data
 
@@ -346,7 +357,7 @@ class H(BaseHTTPRequestHandler):
                     png = render_png(pid, int(q["n"]), clip, int(q.get("dpi", 220)), q.get("mask") == "1")
                     return self.send(200, png, "image/png", {"Cache-Control": "max-age=3600"})
                 if rest == "handout.pdf" and method == "GET":
-                    data = make_handout(pid, int(q.get("per", 2)))
+                    data = make_handout(pid, int(q.get("per", 2)), q.get("title", "").strip()[:80])
                     return self.send(200, data, "application/pdf")
                 if rest == "slides.pdf" and method == "POST":
                     data = make_slides_pdf(json.loads(self.body())["images"])
