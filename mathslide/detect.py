@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 4   # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 5  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -193,6 +193,53 @@ def find_plain_markers(doc):
     return best
 
 
+def find_lead_markers(doc):
+    """교재처럼 문제 번호가 본문 첫 줄의 맨 앞 글자(본문보다 큰 숫자 한 조각)로 붙어 있는 경우.
+    예: '1 두 점 A(a,4), B(-1,-2) 사이의 거리가…'  첫 조각이 숫자뿐이고 뒤에 본문 글이 이어지는 줄을 모은다.
+    (글꼴·크기)가 같은 묶음 중 가장 많고, 한 쪽 안에서 번호가 순서대로 늘어나는 것을 문제 번호로 본다.
+    반환 {쪽: [(번호, 번호 조각 bbox)]}"""
+    sizes = []
+    for pg in doc:
+        for _ln, sp in _all_spans(pg):
+            t = sp["text"].strip()
+            if t:
+                sizes.extend([sp["size"]] * len(t))
+    if not sizes:
+        return {}
+    body = statistics.median(sizes)
+    groups = defaultdict(list)
+    for pn, page in enumerate(doc):
+        H = page.rect.height
+        for b in page.get_text("dict")["blocks"]:
+            for ln in b.get("lines", []):
+                spans = [sp for sp in ln["spans"] if sp["text"].strip()]
+                if len(spans) < 2 or not NUM_RE.fullmatch(spans[0]["text"].strip()):
+                    continue   # 번호 뒤에 본문이 이어져야 한다
+                sp = spans[0]
+                if sp["size"] < body * 1.25 or not (HEADER_Y * H < sp["bbox"][1] < FOOTER_Y * H):
+                    continue
+                groups[(round(sp["size"], 1), sp["font"])].append((pn, sp["text"].strip(), sp["bbox"]))
+    best, best_n = {}, 0
+    for items in groups.values():
+        if len(items) < 4 or len(items) <= best_n:
+            continue
+        by_page = defaultdict(list)
+        for it in items:
+            by_page[it[0]].append(it)
+        steps = total = 0
+        for its in by_page.values():
+            its = sorted(its, key=lambda it: (round(it[2][0] / 60), it[2][1]))   # 단(왼→오) → 위→아래
+            seq = [int(it[1]) for it in its]
+            steps += sum(1 for a, b in zip(seq, seq[1:]) if b == a + 1)
+            total += len(seq) - 1
+        if total and steps < 0.6 * total:
+            continue   # 번호가 순서대로 늘어나지 않으면 문제 번호가 아니다
+        best, best_n = {}, len(items)
+        for pn, label, bb in items:
+            best.setdefault(pn, []).append((label, bb))
+    return best
+
+
 def find_footer_y(doc):
     """모든 쪽에서 같은 자리에 반복되는 숫자 줄(쪽 번호 상자 등)이 있으면 그 위쪽 y를, 없으면 None."""
     spots = []
@@ -283,9 +330,10 @@ def detect(doc):
     big = find_big_numbers(doc, style) if style else {}
     marks = find_markers(doc)
     plain = find_plain_markers(doc)
-    n_big, n_mark, n_plain = (sum(map(len, d.values())) for d in (big, marks, plain))
-    # 가장 많이 찾은 방법을 쓴다 (동점이면 큰 번호 > 낱말 글머리 > 굵은 번호 순)
-    options = [(n, -i, per) for i, (n, per, need) in enumerate([(n_big, big, 1), (n_mark, marks, 2), (n_plain, plain, 4)]) if n >= need]
+    lead = find_lead_markers(doc)
+    n_big, n_mark, n_plain, n_lead = (sum(map(len, d.values())) for d in (big, marks, plain, lead))
+    # 가장 많이 찾은 방법을 쓴다 (동점이면 큰 번호 > 낱말 글머리 > 굵은 번호 > 줄머리 번호 순)
+    options = [(n, -i, per) for i, (n, per, need) in enumerate([(n_big, big, 1), (n_mark, marks, 2), (n_plain, plain, 4), (n_lead, lead, 4)]) if n >= need]
     if not options and style is None:   # 마지막 수단: 쪽 번호처럼 보여도 큰 숫자 글자를 문제 번호로 써 본다
         style2 = find_number_style(doc, allow_page_like=True)
         if style2:
