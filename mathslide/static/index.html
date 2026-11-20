@@ -139,14 +139,14 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 #side .addrow{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
 #side .addrow button{padding:8px 4px;font-size:12.5px}
 #selbox{position:absolute;display:none;border:3px dashed #4dd8ff;border-radius:10px;pointer-events:none;z-index:4}
-#objpop{position:fixed;display:none;gap:6px;background:rgba(32,34,44,.97);border:1px solid #555;border-radius:14px;padding:6px;z-index:34;box-shadow:0 6px 22px rgba(0,0,0,.5);flex-wrap:wrap;max-width:min(780px,94vw)}
-#objpop button{background:#2c2f3d;color:#eee;border:1px solid #444;min-width:54px;height:38px;border-radius:10px;font-size:12px;line-height:1.15;padding:0 8px}
-#objpop button:hover{background:#3a3e52}
+#objpop,#lpop{position:fixed;display:none;gap:6px;background:rgba(32,34,44,.97);border:1px solid #555;border-radius:14px;padding:6px;z-index:34;box-shadow:0 6px 22px rgba(0,0,0,.5);flex-wrap:wrap;max-width:min(780px,94vw)}
+#objpop button,#lpop button{background:#2c2f3d;color:#eee;border:1px solid #444;min-width:54px;height:38px;border-radius:10px;font-size:12px;line-height:1.15;padding:0 8px}
+#objpop button:hover,#lpop button:hover{background:#3a3e52}
 #objpop button.on{background:var(--acc);border-color:var(--acc)}
-#objpop .gap{width:1px;background:#555;margin:4px 2px}
+#objpop .gap,#lpop .gap{width:1px;background:#555;margin:4px 2px}
 #figbar{position:fixed;top:14px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:12px;background:rgba(32,34,44,.97);border:1px solid #4dd8ff;color:#eee;border-radius:14px;padding:8px 10px 8px 18px;z-index:35;font-size:16px}
 #figbar button{background:var(--acc);color:#fff;border:0;border-radius:10px;height:42px;padding:0 18px;font-size:16px}
-#tb,.menu,#objpop,#pop,#figbar{cursor:default}
+#tb,.menu,#objpop,#lpop,#pop,#figbar{cursor:default}
 /* 필기 중 펜 위치를 보여 주는 원: 지금 그어질 선의 굵기·색과 같다. 운영체제 커서 대신 프로그램이 그린다 */
 #cur{position:fixed;left:0;top:0;display:none;pointer-events:none;z-index:36;border-radius:50%;box-sizing:border-box;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.75),inset 0 0 0 1px rgba(0,0,0,.35)}
 #cur::after{content:'';position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:var(--c,#fff);box-shadow:0 0 0 1px rgba(0,0,0,.7)}
@@ -303,6 +303,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
     <button id="tPen">✏️<br>펜</button>
     <button id="tHl">🖍<br>형광펜</button>
     <button id="tEr">🧽<br>지우개</button>
+    <button id="tLasso" title="필기 선택: 쓴 내용을 동그라미로 둘러싸서 이동·복제·복사·삭제 (l)">✂<br>필기 선택</button>
     <button id="tShape" data-menu="mShape">◯<br>도형·직선</button>
     <button id="tColor" data-menu="mColor">●<br>색·굵기</button>
     <button id="tUndo">↩<br>취소</button>
@@ -315,6 +316,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
   <!-- 펼침 메뉴 -->
   <div class="menu" id="mColor"><div id="colLabel"></div><div id="sws"></div><div id="szs"></div></div>
   <div id="objpop"></div>
+  <div id="lpop"></div>
   <div id="cur"></div>
   <div id="figbar">확대할 그래프 부분을 드래그해서 고르세요 (여러 개 가능) <button id="figDone">완료</button></div>
   <div class="menu" id="mMore">
@@ -576,6 +578,17 @@ document.addEventListener('keydown', e => {
 });
 $('#pPrev').onclick = () => { if (rv.page > 0) { rv.page--; renderPage() } };
 $('#pNext').onclick = () => { if (rv.page < proj.pages.length - 1) { rv.page++; renderPage() } };
+// 마우스 휠로 PDF 페이지 넘기기 (검수 화면). 상자를 그리는 중이거나 화면이 스크롤되는 상태면 넘기지 않는다
+{
+  let wt = 0, wev = 0;
+  $('#pagearea').addEventListener('wheel', e => {
+    const a = $('#pagearea'); if (e.ctrlKey || e.buttons || Math.abs(e.deltaY) < 2 || a.scrollHeight > a.clientHeight + 2) return;
+    e.preventDefault();
+    const now = performance.now(), big = e.deltaMode !== 0 || Math.abs(e.deltaY) >= 50, quiet = now - wev > 200; wev = now;
+    if (now - wt < 250 || (!big && !quiet)) return;
+    wt = now; (e.deltaY > 0 ? $('#pNext') : $('#pPrev')).click();
+  }, { passive: false });
+}
 function makeBlank(bg) { return { id: 'b' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36), blank: true, bg, label: '빈 페이지', on: true } }
 function addBlank(bg) {   // 선택한 문제 다음(없으면 맨 끝)에 빈 페이지를 넣는다
   const sid = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); let idx = proj.problems.findIndex(p => p.id === sid);
@@ -858,7 +871,7 @@ function go(i) {
   $('#paper').style.display = (p.blank && p.bg === 'grid') ? 'block' : 'none';
   $('#tBlankDel').style.display = p.blank ? 'inline-block' : 'none';
   const a = $('#ans'); a.style.display = 'none'; if (p.answer) { a.src = ansUrl(p); a.onload = () => layoutAns(a, p) }
-  P.zoom = false; P.ans = false; setTool('sel');
+  P.zoom = false; P.ans = false; P.lasso = null; P.lpath = null; P.lmove = null; setTool('sel');
   $('#badge').textContent = /^\d+$/.test(p.label) ? p.label + '번' : p.label; $('#tCnt').textContent = `${P.i + 1} / ${P.slides.length}`; document.querySelectorAll('.edge button').forEach(b => b.disabled = b.dataset.nav === '-1' ? P.i === 0 : P.i === P.slides.length - 1);
   fitStage(); redrawBase(); present_preload(); buildFigs();
 }
@@ -896,10 +909,10 @@ function drawStroke(ctx, s, theme) {
 function redrawBase() {
   bctx.clearRect(0, 0, SW, SH); curStrokes().forEach(s => drawStroke(bctx, s, P.theme)); blit();
 }
-function blit(extra) { ictx.clearRect(0, 0, SW, SH); ictx.drawImage(base, 0, 0); if (extra) drawStroke(ictx, extra, P.theme) }
+function blit(extra) { ictx.clearRect(0, 0, SW, SH); ictx.drawImage(base, 0, 0); if (extra) drawStroke(ictx, extra, P.theme); drawLassoOverlay() }
 function pushHist() { const id = cur().id; (P.hist[id] = P.hist[id] || []).push(JSON.stringify(curStrokes())); if (P.hist[id].length > 60) P.hist[id].shift(); P.redo[id] = [] }
-function undo() { if (P.sel === 'shape') selectObj(null); const id = cur().id, h = P.hist[id]; if (!h || !h.length) return; (P.redo[id] = P.redo[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(h.pop()); redrawBase(); saveStrokes() }
-function redo() { if (P.sel === 'shape') selectObj(null); const id = cur().id, r = P.redo[id]; if (!r || !r.length) return; (P.hist[id] = P.hist[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(r.pop()); redrawBase(); saveStrokes() }
+function undo() { P.lasso = null; lassoUI(); if (P.sel === 'shape') selectObj(null); const id = cur().id, h = P.hist[id]; if (!h || !h.length) return; (P.redo[id] = P.redo[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(h.pop()); redrawBase(); saveStrokes() }
+function redo() { P.lasso = null; lassoUI(); if (P.sel === 'shape') selectObj(null); const id = cur().id, r = P.redo[id]; if (!r || !r.length) return; (P.hist[id] = P.hist[id] || []).push(JSON.stringify(curStrokes())); P.strokes[id] = JSON.parse(r.pop()); redrawBase(); saveStrokes() }
 function segDist(px, py, a, b) {
   const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy; let t = l ? ((px - a[0]) * dx + (py - a[1]) * dy) / l : 0; t = Math.max(0, Math.min(1, t));
   return Math.hypot(px - (a[0] + t * dx), py - (a[1] + t * dy));
@@ -908,9 +921,20 @@ function eraseAt(x, y) {
   const R = 22, arr = curStrokes(); const keep = arr.filter(s => { for (let i = 0; i < s.p.length; i++) { if (segDist(x, y, s.p[i], s.p[Math.min(i + 1, s.p.length - 1)]) < R + s.w) return false } return true });
   if (keep.length !== arr.length) { P.strokes[cur().id] = keep; redrawBase(); return true } return false;
 }
-ink.addEventListener('wheel', e => { if (P.tool === 'sel' && P.sel) { e.preventDefault(); scaleSel(e.deltaY < 0 ? 1.06 : 1 / 1.06) } }, { passive: false });
+// 마우스 휠: 선택한 것이 있으면 크기 조절, 없으면 페이지 넘기기 (휠을 한 번 굴릴 때 여러 장이 넘어가지 않게 간격을 둔다)
+let wheelT = 0, wheelEv = 0;
+ink.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (P.tool === 'lasso' && P.lasso) { lassoScale(e.deltaY < 0 ? 1.06 : 1 / 1.06); return }
+  if (P.tool === 'sel' && P.sel) { scaleSel(e.deltaY < 0 ? 1.06 : 1 / 1.06); return }
+  if (P.drawing || P.lpath || P.lmove || selPtrs.size || Math.abs(e.deltaY) < 2) return;
+  const now = performance.now(), big = e.deltaMode !== 0 || Math.abs(e.deltaY) >= 50, quiet = now - wheelEv > 200; wheelEv = now;
+  if (now - wheelT < 250 || (!big && !quiet)) return;   // 터치패드의 관성 스크롤은 잠깐 멈췄다가 다시 굴릴 때만 한 장 넘김
+  wheelT = now; go(P.i + (e.deltaY > 0 ? 1 : -1));
+}, { passive: false });
 ink.addEventListener('pointerdown', e => {
   if (P.tool === 'sel') return selDown(e);
+  if (P.tool === 'lasso') return lassoDown(e);
   if (P.tool === 'fig') return figDown(e);
   writeDown(e);
 });
@@ -943,6 +967,7 @@ function shapeStroke(a, b, kind) {
 }
 ink.addEventListener('pointermove', e => {
   if (P.tool === 'sel') return selMove(e);
+  if (P.tool === 'lasso') return lassoMove(e);
   if (P.tool === 'fig') return figMove(e);
   const d = P.drawing; if (!d || e.pointerId !== d.id) return;
   if (d.shape) { d.s = shapeStroke(d.start, d.pos(e), P.shape); blit(d.s); return }
@@ -952,6 +977,7 @@ ink.addEventListener('pointermove', e => {
 });
 const endDraw = e => {
   if (P.tool === 'sel') return selUp(e);
+  if (P.tool === 'lasso') return lassoUp(e);
   if (P.tool === 'fig') return figUp(e);
   const d = P.drawing; if (!d || e.pointerId !== d.id) return; P.drawing = null;
   if (d.eraser) { if (!d.moved && (P.hist[cur().id] || []).length) { /* 변화 없음: 기록 제거 */ P.hist[cur().id].pop() } }
@@ -961,6 +987,103 @@ const endDraw = e => {
 };
 ink.addEventListener('pointerup', endDraw); ink.addEventListener('pointercancel', endDraw);
 ink.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---- 필기 선택(올가미): 쓴 내용을 둘러싸서 고른 뒤 이동·복제·복사·삭제 (키보드 없이 화면 버튼만으로 쓸 수 있다) ---- */
+P.lasso = null; P.lpath = null; P.lmove = null; P.clip = []; P.clipPage = null;
+const cloneS = s => JSON.parse(JSON.stringify(s));
+function lassoBox() {
+  if (!P.lasso || !P.lasso.s.length) return null;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  P.lasso.s.forEach(s => s.p.forEach(q => { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1] }));
+  const m = 14; return { x: x0 - m, y: y0 - m, w: x1 - x0 + 2 * m, h: y1 - y0 + 2 * m };
+}
+function drawLassoOverlay() {
+  if (P.tool !== 'lasso') return;
+  ictx.save(); ictx.lineWidth = 3; ictx.setLineDash([12, 8]); ictx.strokeStyle = '#4dd8ff'; ictx.lineJoin = 'round';
+  if (P.lpath && P.lpath.p.length > 1) { ictx.beginPath(); ictx.moveTo(P.lpath.p[0][0], P.lpath.p[0][1]); P.lpath.p.forEach(q => ictx.lineTo(q[0], q[1])); ictx.stroke() }
+  const b = lassoBox(); if (b) { ictx.fillStyle = 'rgba(77,216,255,.08)'; ictx.fillRect(b.x, b.y, b.w, b.h); ictx.strokeRect(b.x, b.y, b.w, b.h) }
+  ictx.restore();
+}
+function inPoly(x, y, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+  }
+  return c;
+}
+function strokeNear(s, pt, R) { for (let i = 0; i < s.p.length; i++) if (segDist(pt[0], pt[1], s.p[i], s.p[Math.min(i + 1, s.p.length - 1)]) < R + s.w) return true; return false }
+function lassoUI() {
+  const el = $('#lpop'); el.innerHTML = '';
+  if (P.tool !== 'lasso' || P.lpath || P.lmove) { el.style.display = 'none'; return }
+  const add = (html, fn) => { const b = document.createElement('button'); b.innerHTML = html; b.onclick = e => { e.stopPropagation(); fn() }; el.appendChild(b) };
+  const gap = () => { const g = document.createElement('span'); g.className = 'gap'; el.appendChild(g) };
+  if (P.lasso) { add('⧉<br>복제', lassoDup); add('📋<br>복사', lassoCopy); add('＋<br>크게', () => lassoScale(1.12)); add('－<br>작게', () => lassoScale(1 / 1.12)) }
+  if (P.clip.length) add('📥<br>붙여넣기', lassoPaste);
+  if (P.lasso) { gap(); add('🗑<br>삭제', lassoDelete); add('✕<br>선택 해제', () => { P.lasso = null; blit(); lassoUI() }) }
+  if (!el.children.length) { el.style.display = 'none'; return }
+  el.style.display = 'flex'; lassoPos();
+}
+function lassoPos() {
+  const el = $('#lpop'); if (el.style.display === 'none') return;
+  const pw = el.offsetWidth, ph = el.offsetHeight, b = lassoBox();
+  if (!b) { el.style.left = Math.max(8, (innerWidth - pw) / 2) + 'px'; el.style.top = Math.max(8, innerHeight - ph - 100) + 'px'; return }
+  const st = $('#stage').getBoundingClientRect(), sc = P.s, L = st.left + b.x * sc, T = st.top + b.y * sc, W = b.w * sc, H = b.h * sc;
+  let left = Math.max(8, Math.min(innerWidth - pw - 8, L + W - pw)), top = T + H + 16;
+  if (top + ph > innerHeight - 100) { top = T - ph - 16; if (top < 8) top = Math.max(8, innerHeight - ph - 110) }
+  el.style.left = left + 'px'; el.style.top = top + 'px';
+}
+function lassoDown(e) {
+  e.preventDefault(); try { ink.setPointerCapture(e.pointerId) } catch (x) { }
+  if (P.lpath || P.lmove) return;
+  const pt = stagePt(e), b = lassoBox();
+  if (b && pt[0] >= b.x && pt[0] <= b.x + b.w && pt[1] >= b.y && pt[1] <= b.y + b.h) { P.lmove = { id: e.pointerId, start: pt, last: pt, dirty: false }; lassoUI(); return }   // 선택 영역 안 → 끌어서 이동
+  P.lasso = null; P.lpath = { id: e.pointerId, p: [pt] }; lassoUI(); blit();
+}
+function lassoMove(e) {
+  const pt = stagePt(e), m = P.lmove;
+  if (m && e.pointerId === m.id) {
+    if (!m.dirty) { if (Math.hypot(pt[0] - m.start[0], pt[1] - m.start[1]) < 4) return; pushHist(); m.dirty = true }
+    const dx = pt[0] - m.last[0], dy = pt[1] - m.last[1]; m.last = pt;
+    P.lasso.s.forEach(s => s.p.forEach(q => { q[0] += dx; q[1] += dy })); redrawBase(); return;
+  }
+  const l = P.lpath; if (!l || e.pointerId !== l.id) return;
+  const q = l.p[l.p.length - 1]; if (Math.hypot(pt[0] - q[0], pt[1] - q[1]) > 3) { l.p.push(pt); blit() }
+}
+function lassoUp(e) {
+  const m = P.lmove;
+  if (m && e.pointerId === m.id) { P.lmove = null; if (m.dirty) saveStrokes(); lassoUI(); return }
+  const l = P.lpath; if (!l || e.pointerId !== l.id) return; P.lpath = null;
+  const arr = curStrokes(); let sel;
+  const ext = bboxOf(l.p);
+  if (l.p.length < 3 || Math.max(ext.w, ext.h) < 14) {   // 살짝 눌렀다 뗌 → 그 자리의 획 하나를 고른다
+    let hit = null; for (let k = arr.length - 1; k >= 0 && !hit; k--) if (strokeNear(arr[k], l.p[0], 20)) hit = arr[k];
+    sel = hit ? [hit] : [];
+  } else sel = arr.filter(s => { let n = 0; s.p.forEach(q => { if (inPoly(q[0], q[1], l.p)) n++ }); return n >= s.p.length * .5 });
+  P.lasso = sel.length ? { s: sel } : null;
+  if (!sel.length) toast('선택된 필기가 없어요. 쓴 내용을 동그랗게 둘러싸 보세요');
+  blit(); lassoUI();
+}
+function lassoDup() { if (!P.lasso) return; pushHist(); const c = P.lasso.s.map(cloneS); c.forEach(s => s.p.forEach(q => { q[0] += 40; q[1] += 40 })); curStrokes().push(...c); P.lasso = { s: c }; redrawBase(); saveStrokes(); lassoUI() }
+function lassoCopy() { if (!P.lasso) return; P.clip = P.lasso.s.map(cloneS); P.clipPage = cur().id; toast('복사했어요. 원하는 페이지에서 ‘붙여넣기’를 누르세요'); lassoUI() }
+function lassoPaste() {
+  if (!P.clip.length) return; pushHist();
+  const off = P.clipPage === cur().id ? 40 : 0, c = P.clip.map(cloneS); c.forEach(s => s.p.forEach(q => { q[0] += off; q[1] += off }));
+  curStrokes().push(...c); P.clip.forEach(s => s.p.forEach(q => { q[0] += off; q[1] += off })); P.clipPage = cur().id;   // 다음 붙여넣기는 조금 더 비켜서
+  P.lasso = { s: c }; redrawBase(); saveStrokes(); lassoUI();
+}
+function lassoScale(f) {
+  const b = lassoBox(); if (!b) return; const now = performance.now();
+  if (!P.lScaleT || now - P.lScaleT > 800) pushHist(); P.lScaleT = now;
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  P.lasso.s.forEach(s => { s.p = s.p.map(([x, y]) => [cx + (x - cx) * f, cy + (y - cy) * f]) });
+  redrawBase(); saveStrokes(); lassoPos();
+}
+function lassoDelete() {
+  if (!P.lasso) return; pushHist(); const dead = new Set(P.lasso.s); P.strokes[cur().id] = curStrokes().filter(s => !dead.has(s));
+  P.lasso = null; redrawBase(); saveStrokes(); lassoUI(); toast('지웠어요 (↩ 취소로 되돌릴 수 있어요)');
+}
+
 
 function setTheme(t) {
   P.theme = t; const el = $('#present'); el.classList.toggle('dark', t === 'dark'); el.classList.toggle('light', t === 'light'); if (cur()) redrawBase();
@@ -1008,12 +1131,13 @@ function buildBar() {
 }
 function setTool(t) {
   P.tool = t; if (t === 'pen' || t === 'hl' || t === 'er') P.lastWrite = t;
-  ['Sel', 'Pen', 'Hl', 'Er', 'Shape'].forEach(n => $('#t' + n).classList.toggle('on', n.toLowerCase() === t));
+  ['Sel', 'Pen', 'Hl', 'Er', 'Lasso', 'Shape'].forEach(n => $('#t' + n).classList.toggle('on', n.toLowerCase() === t));
   if (t !== 'sel') selectObj(null);                       // 선택 모드를 벗어나면 팝업을 닫는다
+  if (t !== 'lasso') { P.lasso = null; P.lpath = null; P.lmove = null; if (cur()) blit() } lassoUI();
   if (t !== 'fig') $('#figbar').style.display = 'none';
   P.figSelNew = false; $('#rub').style.display = 'none'; buildBar();
   // 필기(펜·형광펜) 중에는 커서를 숨긴다
-  ink.style.cursor = { sel: 'default', pen: 'none', hl: 'none', er: 'none', fig: 'crosshair', shape: 'crosshair' }[t];
+  ink.style.cursor = { sel: 'default', pen: 'none', hl: 'none', er: 'none', fig: 'crosshair', shape: 'crosshair', lasso: 'crosshair' }[t];
   $('#present').style.cursor = (t === 'pen' || t === 'hl' || t === 'er') ? 'none' : 'default';
 }
 $('#tSel').onclick = () => setTool('sel');
@@ -1022,7 +1146,7 @@ $('#tLine').onclick = () => { P.shape = 'line'; setTool('shape') };
 $('#tCircle').onclick = () => { P.shape = 'circle'; setTool('shape') };
 $('#tTri').onclick = () => { P.shape = 'tri'; setTool('shape') };
 $('#tSq').onclick = () => { P.shape = 'sq'; setTool('shape') };
-$('#tPen').onclick = () => setTool('pen'); $('#tHl').onclick = () => setTool('hl'); $('#tEr').onclick = () => setTool('er');
+$('#tLasso').onclick = () => setTool('lasso'); $('#tPen').onclick = () => setTool('pen'); $('#tHl').onclick = () => setTool('hl'); $('#tEr').onclick = () => setTool('er');
 $('#tUndo').onclick = undo; $('#tRedo').onclick = redo;
 $('#tClear').onclick = () => { if (!curStrokes().length) return; if (P.sel === 'shape') selectObj(null); pushHist(); P.strokes[cur().id] = []; redrawBase(); saveStrokes(); toast('모든 필기를 삭제했어요. ↩ 취소로 되돌릴 수 있어요') };
 document.querySelectorAll('.edge button').forEach(b => b.onclick = () => go(P.i + Number(b.dataset.nav)));
@@ -1104,8 +1228,11 @@ document.addEventListener('keydown', e => {
   const k = e.key;
   if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { go(P.i + 1); e.preventDefault() }
   else if (k === 'ArrowLeft' || k === 'PageUp') { go(P.i - 1); e.preventDefault() }
+  else if (P.tool === 'lasso' && (e.ctrlKey || e.metaKey) && k.toLowerCase() === 'c') { if (P.lasso) lassoCopy(); e.preventDefault() }
+  else if (P.tool === 'lasso' && (e.ctrlKey || e.metaKey) && k.toLowerCase() === 'v') { lassoPaste(); e.preventDefault() }
+  else if (P.tool === 'lasso' && P.lasso && (k === 'Delete' || k === 'Backspace')) { lassoDelete(); e.preventDefault() }
   else if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === 'z') { e.shiftKey ? redo() : undo(); e.preventDefault() }
-  else if (k === 's') setTool('sel'); else if (k === 'p') setTool('pen'); else if (k === 'h') setTool('hl'); else if (k === 'e') setTool('er');
+  else if (k === 's') setTool('sel'); else if (k === 'p') setTool('pen'); else if (k === 'h') setTool('hl'); else if (k === 'e') setTool('er'); else if (k === 'l') setTool('lasso');
   else if (k === 'a' && (cur().answer || cur().mask)) toggleAns(); else if (k === 'z') toggleZoom(); else if (k === 'f') $('#tFull').click(); else if (k === 'g') $('#tGrid').click();
   else if (k === 'Escape') { if ($('#grid').style.display === 'block') $('#grid').style.display = 'none'; }
 });
