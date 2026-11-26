@@ -7,19 +7,23 @@
      (예: 658 처럼 크게 인쇄된 문제 번호)
   4) 문서 전체에서 크기가 비슷한 후보가 가장 많은 묶음을 '문제 번호'로 확정한다.
   5) 번호 위치부터 같은 단의 다음 번호 직전까지를 한 문제로 자르고 여백을 다듬는다.
-번호 글자를 읽지는 않으므로 라벨은 1, 2, 3… 순서로 임시로 붙인다(화면에서 고칠 수 있다).
+번호 글자는 모양 맞추기(digits.py)로 읽고, 못 읽으면 앞 번호+1로 임시로 붙인다(화면에서 고칠 수 있다).
+쪽 크기가 A4와 달라도(스캔 해상도에 따라 가로 1500pt가 넘기도 한다) 가로 827픽셀로 맞춰 그려 같은 기준을 쓴다.
 """
 import numpy as np
 import pymupdf
 
 import digits
 
-DPI = 100
-K = 72.0 / DPI
+TARGET_W = 827   # A4 한 쪽(595pt)을 100dpi로 그린 가로 픽셀 수. 쪽 크기가 달라도 이 폭으로 맞춰 같은 기준을 쓴다.
+
+
+def _dpi(page):
+    return max(20, int(round(72.0 * TARGET_W / page.rect.width)))
 
 
 def _gray(page):
-    pix = page.get_pixmap(dpi=DPI, colorspace=pymupdf.csGRAY, alpha=False)
+    pix = page.get_pixmap(dpi=_dpi(page), colorspace=pymupdf.csGRAY, alpha=False)
     return np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
 
 
@@ -34,12 +38,12 @@ def _kill_runs(m, minlen):
     return out
 
 
-def _ink(gray):
+def _ink(gray, raw=False):
     bg = float(np.percentile(gray, 90))
-    ink = gray < min(190.0, bg - 55)
-    ink = _kill_runs(ink, 60)               # 세로 직선
+    ink0 = gray < min(190.0, bg - 55)
+    ink = _kill_runs(ink0, 60)              # 세로 직선
     ink = _kill_runs(ink.T, 110).T          # 가로 직선
-    return ink
+    return (ink, ink0) if raw else ink
 
 
 def _runs(v, gap):
@@ -130,7 +134,19 @@ def _candidates(ink, x0, x1, y0, y1):
     return cands
 
 
-def _trim(ink, r, pad_pt=5):
+def _bottom_rule(raw, x0, x1, y1, reach):
+    """다듬은 영역 바로 아래(reach 픽셀 안)에 상자 테두리 같은 긴 가로선이 있으면 그 선의 y를, 없으면 None."""
+    if raw is None:
+        return None
+    best = None
+    for y in range(y1, min(raw.shape[0], y1 + reach)):
+        row = raw[y, x0:x1]
+        if row.sum() >= 0.5 * (x1 - x0):
+            best = y
+    return best
+
+
+def _trim(ink, r, K, pad_pt=5, raw=None):
     x0, y0, x1, y1 = r
     x1 = min(x1, int(ink.shape[1] * 0.93))   # 가장자리 인덱스 탭 제외
     sub = ink[y0:y1, x0:x1]
@@ -138,30 +154,51 @@ def _trim(ink, r, pad_pt=5):
     cols = np.where(sub.sum(0) >= 2)[0]
     if not len(rows) or not len(cols):
         return r
-    p = int(pad_pt / K)
-    return (max(x0, x0 + int(cols[0]) - p), max(y0, y0 + int(rows[0]) - p),
-            min(x1, x0 + int(cols[-1]) + 1 + p), min(y1, y0 + int(rows[-1]) + 1 + p))
+    p = max(3, int(pad_pt / K))
+    tl, tr = max(x0, x0 + int(cols[0]) - p), min(x1, x0 + int(cols[-1]) + 1 + p)
+    tt, tb = max(y0, y0 + int(rows[0]) - p), min(y1, y0 + int(rows[-1]) + 1 + p)
+    rule = _bottom_rule(raw, tl, tr, tb - p, 16)   # 상자(보기 등) 아래 테두리는 잘라 내지 않는다
+    if rule is not None and rule < y1:
+        tb = min(y1, rule + 1 + p)
+    return (tl, tt, tr, tb)
+
+
+def _split(ink, W, zt, zb, mid, g):
+    strips = [(0, mid, 0, mid, 0, g), (mid, W, mid, W, g, W)]
+    found = []
+    for ci, (x0, x1, lo, hi, cx0, cx1) in enumerate(strips):
+        cs = [c for c in _candidates(ink, x0, x1, zt, zb) if lo <= c["x0"] < hi]
+        found.append((ci, cx0, cx1, cs))
+    return found
+
+
+def _split_columns(ink, W, zt, zb, gr):
+    """단 나누기. 두 단이면 통로를 기준으로 가른다.
+    번호가 글줄 왼쪽 바깥에 걸려 있는 교재는 오른쪽 단의 번호가 통로 안쪽에 놓이고(→통로 왼쪽 끝에서 갈라야 함),
+    왼쪽 단 글이 통로로 조금 삐져나오는 교재는 그 글이 번호로 오인된다(→통로 오른쪽 끝 가까이에서 갈라야 함).
+    두 후보 위치로 모두 찾아 보고 숫자로 잘 읽히는 번호가 더 많은 쪽을 쓴다."""
+    if not gr:
+        return [(0, 0, W, [c for c in _candidates(ink, 0, W, zt, zb)])]
+    g = gr[1]
+    best = None
+    for mid in (max(gr[0] + 2, g - 8), gr[0] + 2):   # 앞쪽이 같은 점수일 때 우선
+        found = _split(ink, W, zt, zb, mid, g)
+        good = sum(1 for _ci, _a, _b, cs in found for c in cs
+                   if 12 <= c["h"] <= 42 and digits.read_number(ink, c["x0"], c["top"], c["x1"], c["bot"])[1] >= 0.45)
+        if best is None or good > best[0]:
+            best = (good, found)
+    return best[1]
 
 
 def detect_scanned(doc):
     pages = []
     for pn, page in enumerate(doc):
-        ink = _ink(_gray(page))
+        ink, raw = _ink(_gray(page), raw=True)
         H, W = ink.shape
         zt, zb = int(H * .02), int(H * .935)
         gr = _gutter(ink, zt, zb)
-        # 두 단이면 통로의 한가운데에서 가른다 (통로 오른쪽 끝 g = 오른쪽 단 글자 시작)
-        if gr:
-            g = gr[1]
-            mid = max(gr[0] + 2, g - 8)   # 오른쪽 단 글자가 시작되기 직전
-            strips = [(0, mid, 0, mid, 0, g), (mid, W, mid, W, g, W)]
-        else:
-            strips = [(0, W, 0, W, 0, W)]
-        found = []
-        for ci, (x0, x1, lo, hi, cx0, cx1) in enumerate(strips):
-            cs = [c for c in _candidates(ink, x0, x1, zt, zb) if lo <= c["x0"] < hi]
-            found.append((ci, cx0, cx1, cs))
-        pages.append((pn, ink, H, W, zt, zb, found))
+        found = _split_columns(ink, W, zt, zb, gr)
+        pages.append((pn, ink, H, W, zt, zb, found, 72.0 / _dpi(page), raw))
 
     # 문서 전체에서 번호 글자 크기 묶음 고르기
     hs = [c["h"] for p in pages for f in p[6] for c in f[3]]
@@ -174,7 +211,7 @@ def detect_scanned(doc):
 
     # 숫자로 읽히는지 확인(템플릿 매칭). 후보의 절반 이상이 숫자로 읽히면 읽힌 것만 쓰고 번호값도 쓴다.
     sized = []
-    for pn, ink, H, W, zt, zb, found in pages:
+    for pn, ink, H, W, zt, zb, found, K, raw in pages:
         for ci, x0, x1, cands in found:
             for c in cands:
                 if abs(c["h"] - best) <= 2:
@@ -183,25 +220,40 @@ def detect_scanned(doc):
     readable = [c for c in sized if c["sc"] >= 0.45 and c["txt"].strip("0")]
     use_read = len(readable) >= max(2, 0.5 * len(sized))
     keep = set(id(c) for c in (readable if use_read else sized))
+    if use_read:
+        # 모양이 번호와 같고 읽기만 실패한 후보는, 같은 단에서 읽힌 번호와 가로 위치가 맞으면 번호로 살린다
+        # (글줄 첫 덩어리가 우연히 같은 크기인 경우는 위치가 어긋나 제외된다)
+        for pn, ink, H, W, zt, zb, found, K, raw in pages:
+            for ci, x0, x1, cands in found:
+                rd = [c["x0"] for c in cands if id(c) in keep]
+                if len(rd) >= 2:
+                    med = float(np.median(rd))
+                    for c in cands:
+                        if c in sized and id(c) not in keep and abs(c["x0"] - med) <= 6:
+                            keep.add(id(c))
 
     problems = []
-    for pn, ink, H, W, zt, zb, found in pages:
+    for pn, ink, H, W, zt, zb, found, K, raw in pages:
+        cols = []
         for ci, x0, x1, cands in found:
             cs = [c for c in cands if id(c) in keep]
+            if cs:
+                med = float(np.median([c["x0"] for c in cs]))
+                cs = sorted([c for c in cs if abs(c["x0"] - med) <= 16], key=lambda c: c["top"])
+            cols.append((ci, x0, x1, cs))
+        for k, (ci, x0, x1, cs) in enumerate(cols):
             if not cs:
                 continue
-            med = float(np.median([c["x0"] for c in cs]))
-            cs = sorted([c for c in cs if abs(c["x0"] - med) <= 16], key=lambda c: c["top"])
+            nxt = [min(c["x0"] for c in cc[3]) for cc in cols[k + 1:] if cc[3]]
             for i, c in enumerate(cs):
                 top = max(zt, c["top"] - 11)
                 bottom = (cs[i + 1]["top"] - 11) if i + 1 < len(cs) else zb
-                left = max(0, c["x0"] - 30) if ci == 0 else max(x0, c["x0"] - 14)
-                right = x1 - 10 if ci + 1 < len(found) or len(found) == 1 else W - 10
-                if ci + 1 < len(found):
-                    right = x1 - 10
-                r = _trim(ink, (left, top, right, bottom))
+                left = max(0, c["x0"] - 30) if k == 0 else max(0, c["x0"] - 14)
+                # 오른쪽 끝: 다음 단의 번호 바로 앞(번호가 글줄 왼쪽 바깥에 걸려 있어도 침범하지 않게). 마지막 단은 쪽 끝.
+                right = (nxt[0] - 14) if nxt else W - 10
+                r = _trim(ink, (left, top, right, bottom), K, raw=raw)
                 problems.append({
-                    "page": pn, "label": c["txt"] if use_read else "", "col": ci, "_k": (pn, ci, c["top"]),
+                    "page": pn, "label": c["txt"] if use_read and c["sc"] >= 0.45 and c["txt"].strip("0") else "", "col": ci, "_k": (pn, ci, c["top"]),
                     "rect": [round(v * K, 1) for v in r], "on": True, "answer": None,
                 })
     problems.sort(key=lambda p: p.pop("_k"))
@@ -209,7 +261,8 @@ def detect_scanned(doc):
         _repair([p for p in problems])
     for i, p in enumerate(problems):
         if not p["label"]:
-            p["label"] = str(i + 1)
+            prev = problems[i - 1]["label"] if i else ""
+            p["label"] = str(int(prev) + 1) if prev.isdigit() else str(i + 1)
     return problems
 
 

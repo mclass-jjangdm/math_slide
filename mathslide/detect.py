@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 10  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 11  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -214,6 +214,34 @@ def find_markers(doc):
                 m = MARK_RE.match(t)
                 if m and HEADER_Y * H < ln["bbox"][1] < FOOTER_Y * H:
                     out.setdefault(pn, []).append((m.group(1), ln["bbox"]))
+    return out
+
+
+REF_RE = re.compile(r"^\s*[\(（\[]?\s*교과서\s*\d+\s*쪽")
+LEADNUM_RE = re.compile(r"^\s*(\d{1,3})\s*[.)]")
+
+
+def find_textbook_refs(doc):
+    """'(교과서 27쪽) 중단원 마무리 문제' 같은 출처 꼬리표 바로 아래 줄이 '19. …'로 시작하면 그것을 문제 표지로 본다.
+    (추가문제 모음처럼 '추가 1.'과 교과서 문제 번호가 섞인 자료용.) 영역 맨 위는 꼬리표 줄부터. {쪽: [(번호, 꼬리표+번호 줄 bbox)]}"""
+    out = {}
+    for pn, page in enumerate(doc):
+        H = page.rect.height
+        lines = []
+        for b in page.get_text("dict")["blocks"]:
+            for ln in b.get("lines", []):
+                t = "".join(s["text"] for s in ln["spans"]).strip()
+                if t:
+                    lines.append((t, ln["bbox"]))
+        for t, bb in lines:
+            if not REF_RE.match(t) or not (HEADER_Y * H < bb[1] < FOOTER_Y * H):
+                continue
+            below = [(t2, b2) for t2, b2 in lines if abs(b2[0] - bb[0]) < 25 and 0 <= b2[1] - bb[3] < 14]
+            below.sort(key=lambda x: x[1][1])
+            for t2, b2 in below[:1]:
+                m = LEADNUM_RE.match(t2)
+                if m:
+                    out.setdefault(pn, []).append((m.group(1), (min(bb[0], b2[0]), bb[1], max(bb[2], b2[2]), b2[3]), False, True))   # 마지막 True: 꼬리표 줄부터 딱 맞게
     return out
 
 
@@ -555,6 +583,9 @@ def detect(doc):
     style = find_number_styles(doc)
     big = find_big_numbers(doc, style) if style else {}
     marks = find_markers(doc)
+    for pn, items in find_textbook_refs(doc).items():
+        have = {m[0] for m in marks.get(pn, [])}
+        marks.setdefault(pn, []).extend(it for it in items if it[0] not in have)
     plain = find_plain_markers(doc)
     lead = find_lead_markers(doc)
     n_big, n_mark, n_plain, n_lead = (sum(map(len, d.values())) for d in (big, marks, plain, lead))
@@ -597,7 +628,7 @@ def detect(doc):
                 if xl < W / 2 and _is_spread(page, cols):
                     right = W / 2 - 10   # 펼침면의 반대쪽 쪽(읽기 자료 등)까지 번지지 않게
             col.sort(key=lambda n: n[1][1])
-            tops = [max(0, _badge_top(page, left, right, n[1][1] - 8, n[1][0], n[1][1])) for n in col]
+            tops = [n[1][1] - 1 if len(n) > 3 and n[3] else max(0, _badge_top(page, left, right, n[1][1] - 8, n[1][0], n[1][1])) for n in col]
             for i, (t, bb, *_x) in enumerate(col):
                 inl = bool(_x and _x[0])
                 top = tops[i]
