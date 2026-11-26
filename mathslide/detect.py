@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 7  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 8  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -106,7 +106,7 @@ def find_number_style(doc, allow_page_like=False):
     return st[0] if st else None
 
 
-def _trim(page, rect, pad=5.0, dpi=60):
+def _trim(page, rect, pad=5.0, dpi=60, xmin=None):
     """rect 안의 실제 내용(글줄·그림·작은 도형)만 감싸는 사각형.
     영역 밖으로 삐져나가는 큰 배경 상자·테두리는 내용으로 치지 않는다."""
     boxes = []
@@ -132,6 +132,8 @@ def _trim(page, rect, pad=5.0, dpi=60):
         c = pymupdf.Rect(r)
         if c.x0 > page.rect.width - 40 or c.x1 < 40:
             continue  # 가장자리 인덱스 탭 등
+        if xmin is not None and c.x1 < xmin:
+            continue  # 번호보다 완전히 왼쪽에 있는 것은 옆 단·옆 쪽의 내용
         if not c.intersects(rect) or (c.y0 + c.y1) / 2 < rect.y0 or (c.y0 + c.y1) / 2 > rect.y1:
             continue
         c.intersect(rect)
@@ -366,13 +368,14 @@ def _trim_trailing_badge(page, left, right, top, bottom, next_top):
         if b["type"] == 1:
             if r.height > 0.6 * H or r.width > 1.5 * (right - left):
                 continue
-            boxes.append(r)
+            boxes.append((r, 0))
             continue
         for ln in b.get("lines", []):
-            if "".join(s["text"] for s in ln["spans"]).strip():
+            txt = "".join(s["text"] for s in ln["spans"]).strip()
+            if txt:
                 lr = pymupdf.Rect(ln["bbox"])
                 if lr.x1 > left and lr.x0 < right and lr.y1 > top:
-                    boxes.append(lr)
+                    boxes.append((lr, len(txt)))
     for d in page.get_drawings():
         r = pymupdf.Rect(d["rect"])
         if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom or r.height > 0.5 * H or r.width > 1.2 * (right - left):
@@ -382,19 +385,21 @@ def _trim_trailing_badge(page, left, right, top, bottom, next_top):
         fill = d.get("fill")
         if fill and min(fill) > 0.97 and not d.get("color"):
             continue
-        boxes.append(r)
+        boxes.append((r, 0))
     if not boxes:
         return bottom
-    boxes.sort(key=lambda r: r.y0)
-    clusters = [[boxes[0].x0, boxes[0].y0, boxes[0].x1, boxes[0].y1]]
-    for r in boxes[1:]:
+    boxes.sort(key=lambda t: t[0].y0)
+    r0, n0 = boxes[0]
+    clusters = [[r0.x0, r0.y0, r0.x1, r0.y1, n0]]
+    for r, n in boxes[1:]:
         c = clusters[-1]
         if r.y0 - c[3] > 30:
-            clusters.append([r.x0, r.y0, r.x1, r.y1])
+            clusters.append([r.x0, r.y0, r.x1, r.y1, n])
         else:
-            c[0], c[1], c[2], c[3] = min(c[0], r.x0), min(c[1], r.y0), max(c[2], r.x1), max(c[3], r.y1)
+            c[0], c[1], c[2], c[3], c[4] = min(c[0], r.x0), min(c[1], r.y0), max(c[2], r.x1), max(c[3], r.y1), c[4] + n
     last = clusters[-1]
-    if len(clusters) >= 2 and last[3] - last[1] < 45 and last[2] - last[0] < 90 and last[1] >= next_top - 60:
+    # 배지는 글자가 거의 없고(2~3개 쌓여 있어도 6자 이하) 작다. 다음 번호 바로 위(100pt 이내)에 있다.
+    if len(clusters) >= 2 and last[3] - last[1] < 80 and last[2] - last[0] < 100 and last[4] <= 6 and last[1] >= next_top - 100:
         return min(bottom, last[1] - 2)
     return bottom
 
@@ -506,7 +511,7 @@ def detect(doc):
                     if nx1 > left and nx0 < right and ntop > top:
                         bottom = min(bottom, ntop - 4)
                 region = pymupdf.Rect(left, max(0, top), right, bottom)
-                rect = _trim(page, region)
+                rect = _trim(page, region, xmin=xl - 3)
                 problems.append({
                     "page": pn, "label": t, "col": ci,
                     "rect": [round(rect.x0, 1), round(rect.y0, 1), round(rect.x1, 1), round(rect.y1, 1)],
