@@ -336,6 +336,9 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
     <div style="width:100%;text-align:center;color:#aab;font-size:13px">녹화 파일 형식</div>
     <button id="rfMp4" data-keep="1">MP4<br><small>어디서나 재생</small></button>
     <button id="rfWebm" data-keep="1">WebM<br><small>용량 조금 작음</small></button>
+    <div style="width:100%;text-align:center;color:#aab;font-size:13px;margin-top:4px">화질</div>
+    <button id="rqStd" data-keep="1">표준<br><small>4Mbps</small></button>
+    <button id="rqHigh" data-keep="1">높음(유튜브용)<br><small>8Mbps</small></button>
     <div style="width:100%;text-align:center;color:#aab;font-size:13px;margin-top:4px">저장 폴더: <b id="recDirName" style="color:#fff"></b></div>
     <button id="rdPick" data-keep="1">📁<br>폴더 고르기</button>
     <button id="rdClear" data-keep="1">↺<br>기본(다운로드)</button>
@@ -1325,13 +1328,17 @@ const idb = (mode, fn) => new Promise((res, rej) => {
 });
 let recDir = null;   // 저장 폴더 핸들
 async function loadRecDir() { try { recDir = await idb('readonly', st => st.get('dir')) || null } catch (e) { recDir = null } refreshRecMenu() }
+function recQ() { return localStorage.getItem('recQ') || 'high' }
 function recFmt() { return localStorage.getItem('recFmt') || 'mp4' }
 function refreshRecMenu() {
   $('#rfMp4').classList.toggle('on', recFmt() === 'mp4'); $('#rfWebm').classList.toggle('on', recFmt() === 'webm');
+  $('#rqStd').classList.toggle('on', recQ() === 'std'); $('#rqHigh').classList.toggle('on', recQ() === 'high');
   $('#recDirName').textContent = recDir ? recDir.name : '다운로드 폴더(기본)';
   $('#rdPick').style.display = window.showDirectoryPicker ? '' : 'none';
 }
 $('#rfMp4').onclick = () => { localStorage.setItem('recFmt', 'mp4'); refreshRecMenu(); if (!pickMime(MP4_MIME)) toast('이 브라우저는 MP4 녹화를 지원하지 않아 WebM으로 저장돼요', 3500) };
+$('#rqStd').onclick = () => { localStorage.setItem('recQ', 'std'); refreshRecMenu() };
+$('#rqHigh').onclick = () => { localStorage.setItem('recQ', 'high'); refreshRecMenu() };
 $('#rfWebm').onclick = () => { localStorage.setItem('recFmt', 'webm'); refreshRecMenu() };
 $('#rdPick').onclick = async () => {
   try { const h = await showDirectoryPicker({ id: 'mathslide-rec', mode: 'readwrite', startIn: 'videos' }); recDir = h; await idb('readwrite', st => st.put(h, 'dir')); refreshRecMenu(); toast('녹화 파일을 이 폴더에 저장해요: ' + h.name, 3000) }
@@ -1378,7 +1385,7 @@ async function startRec() {
   }
   const mime = (recFmt() === 'mp4' && pickMime(MP4_MIME)) || pickMime(WEBM_MIME), ext = mime && mime.startsWith('video/mp4') ? 'mp4' : 'webm';
   REC.chunks = [];
-  const mr = REC.mr = new MediaRecorder(new MediaStream(tracks), mime ? { mimeType: mime, videoBitsPerSecond: 2.5e6 } : {});
+  const mr = REC.mr = new MediaRecorder(new MediaStream(tracks), mime ? { mimeType: mime, videoBitsPerSecond: recQ() === 'high' ? 8e6 : 4e6 } : {});
   mr.ondataavailable = e => { if (e.data.size) REC.chunks.push(e.data) };
   mr.onstop = () => {
     recCleanup(); REC.mr = null;
