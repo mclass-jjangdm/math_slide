@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 9  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 10  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -28,18 +28,45 @@ def _all_spans(page):
                 yield ln, sp
 
 
+_OLIKE = str.maketrans({"O": "0", "o": "0"})
+
+
+def _as_number(text):
+    """숫자로 읽히면 숫자 문자열. 글꼴 때문에 0이 알파벳 O로 들어 있는 경우('1O' = 10)도 숫자로 본다."""
+    t = text.strip()
+    if NUM_RE.fullmatch(t):
+        return t
+    if re.fullmatch(r"[0-9Oo]{1,4}", t) and any(c.isdigit() for c in t):
+        u = t.translate(_OLIKE)
+        return u if NUM_RE.fullmatch(u) else None
+    return None
+
+
 def _num_lines(page):
     """숫자만으로 된 줄(예: 658, 0884)과 그 글자 모양(크기, 글꼴), 줄 상자.
-    '0884'처럼 앞의 0과 나머지가 색·조각이 달라 글자 조각이 여러 개여도 한 줄 전체로 본다."""
+    '0884'처럼 앞의 0과 나머지가 색·조각이 달라 글자 조각이 여러 개여도 한 줄 전체로 본다.
+    '문제 3'처럼 작은 글자 머리말 뒤에 큰 숫자가 붙은 줄은 큰 숫자만 번호로 본다."""
     for b in page.get_text("dict")["blocks"]:
         for ln in b.get("lines", []):
             spans = [s for s in ln["spans"] if s["text"].strip()]
             if not spans:
                 continue
-            t = "".join(s["text"] for s in spans).strip()
-            if NUM_RE.fullmatch(t):
+            t = _as_number("".join(s["text"] for s in spans))
+            if t is not None:
                 sp = max(spans, key=lambda s: (s["size"], len(s["text"])))
-                yield t, (round(sp["size"]), sp["font"]), ln["bbox"]
+                yield t, (round(sp["size"]), sp["font"]), ln["bbox"], False
+                continue
+            if len(spans) >= 2:
+                big = max(spans, key=lambda s: s["size"])
+                bt = _as_number(big["text"])
+                rest = [s for s in spans if s is not big]
+                if bt is not None and all(s["size"] <= big["size"] * 0.6 for s in rest) and sum(len(s["text"].strip()) for s in rest) <= 6:
+                    yield bt, (round(big["size"]), big["font"]), ln["bbox"], True   # 본문 속 '문제 3' 같은 작은 문제
+
+
+def _style_match(key, styles, tol=2.5):
+    """글꼴이 같고 크기가 비슷하면(34.5pt와 36pt처럼) 같은 번호 글꼴로 본다."""
+    return any(key[1] == st[1] and abs(key[0] - st[0]) <= tol for st in styles)
 
 
 def _looks_like_page_numbers(items):
@@ -74,15 +101,20 @@ def find_number_styles(doc, allow_page_like=False):
             t = sp["text"].strip()
             if t:
                 sizes.extend([sp["size"]] * len(t))
-        for t, key, bb in _num_lines(page):
+        for t, key, bb, inl in _num_lines(page):
             if HEADER_Y * H < bb[1] < FOOTER_Y * H:
                 cands.append((pn, t, key, bb, H))
     if not sizes or not cands:
         return None
     body = statistics.median(sizes)
     groups = defaultdict(list)
-    for c in cands:
-        groups[c[2]].append(c)
+    reps = []   # 글꼴이 같고 크기가 비슷한 묶음은 하나로 합친다
+    for c in sorted(cands, key=lambda c: c[2][0]):
+        rep = next((r for r in reps if r[1] == c[2][1] and abs(r[0] - c[2][0]) <= 2.5), None)
+        if rep is None:
+            rep = c[2]
+            reps.append(rep)
+        groups[rep].append(c)
     ok = []
     for key, items in groups.items():
         if key[0] < body * 1.25 or len(items) < 2:
@@ -439,10 +471,11 @@ def _trim_trailing_badge(page, left, right, top, bottom, next_top):
     return bottom
 
 
-def _content_bottom(page, left, right, top, bottom, max_gap):
+def _content_bottom(page, left, right, top, bottom, max_gap, text_only=False):
     """top에서 시작해 글줄·그림이 max_gap보다 크게 끊기기 전까지의 아래쪽 끝. (번호 없는 아래쪽 안내·표를 문제에서 떼어 낸다)"""
     W, H = page.rect.width, page.rect.height
     boxes = []
+    fig_x = {}
     for b in page.get_text("dict")["blocks"]:
         r = pymupdf.Rect(b["bbox"])
         if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom:
@@ -451,29 +484,58 @@ def _content_bottom(page, left, right, top, bottom, max_gap):
             if r.height > 0.6 * H or r.width > 1.5 * (right - left):
                 continue   # 배경 그림
             boxes.append((r.y0, r.y1, ""))
+            fig_x[(r.y0, r.y1, "")] = (r.x0, r.x1)
             continue
         for ln in b.get("lines", []):
             txt = "".join(s["text"] for s in ln["spans"]).strip()
             if txt:
                 lr = pymupdf.Rect(ln["bbox"])
-                if lr.x1 > left and lr.x0 < right and lr.y1 > top:
+                if left < (lr.x0 + lr.x1) / 2 < right and lr.y1 > top:   # 글줄은 가운데가 이 단 안에 있어야 한다 (옆 단 글이 살짝 걸친 것은 제외)
                     boxes.append((lr.y0, lr.y1, txt))
     for d in page.get_drawings():   # 벡터로 그려진 그래프도 내용이다
         r = pymupdf.Rect(d["rect"])
-        if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom or r.height > 0.5 * H or r.width > 1.2 * (right - left):
+        if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom or r.height > 0.5 * H:
             continue
         fill = d.get("fill")
         if fill and min(fill) > 0.97 and not d.get("color"):
             continue
+        if r.width > 1.2 * (right - left):
+            # 옆 단·옆 쪽까지 넓게 깔린 색 상자(자기 평가 상자 등)는 문제 안이 아니라 문제 아래를 끊는 표지로만 쓴다
+            if fill and r.height >= 30 and r.y0 > top + 20:
+                boxes.append((r.y0, r.y1, ""))
+                fig_x[(r.y0, r.y1, "")] = (r.x0, r.x1)
+            continue
         boxes.append((r.y0, r.y1, ""))
+        fig_x[(r.y0, r.y1, "")] = (r.x0, r.x1)
+    panel_tops = [k[0] for k, v in fig_x.items() if v[1] - v[0] >= 150]
+    figs = []
+    if text_only:   # 본문 속 작은 문제: 글줄로만 이어짐을 따지고, 글 옆에 겹쳐 있는 그림만 나중에 보탠다 (아래에 붙은 장식 그림·상자는 뺀다)
+        figs = [b for b in boxes if not b[2]]
+        boxes = [b for b in boxes if b[2]]
     boxes.sort()
     if not boxes:
         return bottom
     cur = boxes[0][1]
-    for y0, y1, txt in boxes[1:]:
-        if y0 - cur > max_gap and not _SUBSTART.match(txt):   # '(2)' '②'로 시작하는 작은 문제는 같은 문제의 이어지는 부분
+    for bi in range(1, len(boxes)):
+        y0, y1, txt = boxes[bi]
+        if y0 >= 0.85 * H and y0 - cur >= 8:
+            # 쪽 맨 아래에 붙은 작은 띠(이해도 표시 등): 그림·도형이 섞여 있고 글자가 거의 없으면 문제가 아니다
+            rest = boxes[bi:]
+            chars = sum(len(t) for _a, _b, t in rest)
+            if max(r[1] for r in rest) - y0 <= 60 and any(not t for _a, _b, t in rest) and chars <= 25:
+                break
+        gap_lim = min(30, max_gap) if y0 > 0.85 * H else max_gap   # 쪽 맨 아래 띠(예: 이해도 표시)는 작은 빈틈에서도 끊는다
+        # 40pt 넘게 떨어진 뒤에 큰 그림·색 상자(자기 평가 상자, 이해도 띠 같은 것)가 이어지면 문제 밖의 내용이다
+        wide_panel = y0 - cur > 40 and any(py0 <= y1 + 40 and py0 > cur for py0 in panel_tops)
+        if y0 - cur > (min(gap_lim, 40) if wide_panel else gap_lim) and not _SUBSTART.match(txt):   # '(2)' '②'로 시작하는 작은 문제는 같은 문제의 이어지는 부분
             break
         cur = max(cur, y1)
+    for fb in figs:
+        y0, y1, _t = fb
+        x0, x1 = fig_x.get(fb, (left, right))
+        inside = max(0.0, min(x1, right) - max(x0, left)) / max(1.0, x1 - x0)
+        if y0 < cur - 6 and inside >= 0.5 and (y1 - y0) <= max(150, 2 * (cur - top)):   # 이 단 안에 있는 그림만 (옆으로 넓게 깔린 상자는 제외)
+            cur = max(cur, y1)
     return min(bottom, cur + 8)
 
 
@@ -482,9 +544,9 @@ def find_big_numbers(doc, style):
     out = {}
     for pn, page in enumerate(doc):
         H = page.rect.height
-        for t, key, bb in _num_lines(page):
-            if key in styles and HEADER_Y * H < bb[1] < FOOTER_Y * H:
-                out.setdefault(pn, []).append((t, bb))
+        for t, key, bb, inl in _num_lines(page):
+            if _style_match(key, styles) and HEADER_Y * H < bb[1] < FOOTER_Y * H:
+                out.setdefault(pn, []).append((t, bb, inl))
     return out
 
 
@@ -536,11 +598,14 @@ def detect(doc):
                     right = W / 2 - 10   # 펼침면의 반대쪽 쪽(읽기 자료 등)까지 번지지 않게
             col.sort(key=lambda n: n[1][1])
             tops = [max(0, _badge_top(page, left, right, n[1][1] - 8, n[1][0], n[1][1])) for n in col]
-            for i, (t, bb) in enumerate(col):
+            for i, (t, bb, *_x) in enumerate(col):
+                inl = bool(_x and _x[0])
                 top = tops[i]
                 bottom = tops[i + 1] if i + 1 < len(col) else min(FOOTER_Y * H, foot_y if foot_y else H)
                 if i + 1 < len(col):   # 다음 문제 위에 붙은 배지는 다음 문제의 것
                     bottom = _trim_trailing_badge(page, left, right, top, bottom, col[i + 1][1][1])
+                if inl:   # 본문 속 작은 문제는 문제 글 바로 아래의 다른 설명·상자까지 가져오지 않는다
+                    bottom = _content_bottom(page, left, right, top, bottom, 24, text_only=True)
                 if i + 1 == len(col):   # 단의 마지막 문제: 아래에 번호 없는 표·안내가 있으면 큰 빈틈에서 끊는다
                     bottom = _content_bottom(page, left, right, top, bottom, 125)
                 for nx0, nx1, ntop in notices.get(pn, []):   # 안내 상자는 마지막 문제 영역에서 뺀다
