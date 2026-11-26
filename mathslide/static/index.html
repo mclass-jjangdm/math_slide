@@ -311,6 +311,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
     <button id="tRedo">↪<br>복원</button>
     <span class="sep"></span>
     <button id="tRec" title="화면과 마이크 목소리를 함께 녹화합니다">⏺<br>녹화</button>
+    <button id="tRecStop" style="display:none" title="녹화를 끝내고 파일로 저장">⏹<br>저장</button>
     <button id="tMoreB" data-menu="mMore">⋯<br>더보기</button>
   </div>
   <div class="edge" id="edgeL"><button data-nav="-1" title="이전 문제 (←)">◀<br><small>이전</small></button><button data-nav="1" title="다음 문제 (→)">▶<br><small>다음</small></button></div>
@@ -341,6 +342,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
     <button id="rqHigh" data-keep="1">높음(유튜브용)<br><small>8Mbps</small></button>
     <div style="width:100%;text-align:center;color:#aab;font-size:13px;margin-top:4px">저장 폴더: <b id="recDirName" style="color:#fff"></b></div>
     <button id="rdPick" data-keep="1">📁<br>폴더 고르기</button>
+    <button id="rdShare" data-keep="1" style="display:none">🔌<br>공유 끝내기</button>
     <button id="rdClear" data-keep="1">↺<br>기본(다운로드)</button>
   </div>
   <div class="menu" id="mDevice">
@@ -1235,7 +1237,7 @@ $('#bPng').onclick = async () => {
   try { await paintSlide(cv.getContext('2d'), cur(), curStrokes(), P.theme) } finally { P.zoom = z }
   cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${proj.name.replace(/\.pdf$/i, '')}_${cur().label}.png`; a.click(); toast('이미지를 저장했어요') });
 };
-$('#tExit').onclick = () => { stopRec(); stopTimer(); saveStrokes(); document.fullscreenElement && document.exitFullscreen(); show('review'); renderPage(); renderList() };
+$('#tExit').onclick = () => { stopRec(); releaseShare(); stopTimer(); saveStrokes(); document.fullscreenElement && document.exitFullscreen(); show('review'); renderPage(); renderList() };
 $('#tGrid').onclick = () => {
   const g = $('#gg'); g.innerHTML = '';
   P.slides.forEach((p, i) => { const c = document.createElement('div'); c.className = 'c' + (i === P.i ? ' cur' : ''); c.innerHTML = `<span>${/^\d+$/.test(p.label) ? p.label + '번' : p.label}</span>` + (p.blank ? `<div class="im blank">빈 칠판</div>` : `<div class="im" style="background-image:url('${cropUrl(p, 70)}')"></div>`); c.onclick = () => { $('#grid').style.display = 'none'; go(i) }; g.appendChild(c) });
@@ -1363,46 +1365,67 @@ async function saveRecFile(blob, name) {
 loadRecDir();
 
 /* =================== 화면 + 마이크 녹화 =================== */
-const REC = { mr: null, chunks: [], streams: [], t0: 0, tick: null, ctx: null };
-function recCleanup() {
-  clearInterval(REC.tick); REC.streams.forEach(st => st.getTracks().forEach(t => t.stop())); REC.streams = [];
-  if (REC.ctx) { REC.ctx.close().catch(() => { }); REC.ctx = null }
-  const b = $('#tRec'); b.classList.remove('rec'); b.innerHTML = '⏺<br>녹화';
+// 화면 공유·마이크 허용은 수업 모드에 들어와서 처음 녹화할 때 한 번만 묻는다.
+// 일시정지/계속, 저장 후 다시 녹화는 열려 있는 공유를 그대로 써서 다시 묻지 않는다.
+const REC = { mr: null, chunks: [], screen: null, mic: null, ctx: null, dest: null, acc: 0, seg: 0, tick: null };
+const live = st => st && st.getTracks().some(t => t.readyState === 'live');
+function recUI() {
+  const b = $('#tRec'), st = REC.mr ? REC.mr.state : 'idle', sec = Math.floor((REC.acc + (st === 'recording' ? Date.now() - REC.seg : 0)) / 1000);
+  const t = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+  b.classList.toggle('rec', st === 'recording');
+  b.innerHTML = st === 'recording' ? `<b>●</b> ${t}<br>일시정지` : st === 'paused' ? `⏸ ${t}<br>계속 녹화` : '⏺<br>녹화';
+  b.title = st === 'idle' ? '화면과 마이크 목소리를 함께 녹화합니다' : st === 'recording' ? '일시정지 (다시 누르면 이어서 녹화)' : '이어서 녹화';
+  $('#tRecStop').style.display = st === 'idle' ? 'none' : '';
+  $('#rdShare').style.display = live(REC.screen) && st === 'idle' ? '' : 'none';
+}
+function releaseShare() {   // 화면 공유·마이크를 완전히 놓는다
+  clearInterval(REC.tick);
+  [REC.screen, REC.mic].forEach(st => st && st.getTracks().forEach(t => t.stop())); REC.screen = REC.mic = null;
+  if (REC.ctx) { REC.ctx.close().catch(() => { }); REC.ctx = REC.dest = null }
+  recUI();
+}
+async function ensureShare() {
+  if (!live(REC.screen)) {
+    REC.screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include' });
+    REC.screen.getVideoTracks()[0].onended = () => { if (REC.mr) stopRec(); releaseShare() };   // 브라우저의 '공유 중지'
+  }
+  if (!live(REC.mic)) {
+    REC.mic = null;
+    try { REC.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }) }
+    catch (e) { toast('마이크를 쓸 수 없어 화면만 녹화해요', 3500) }
+    if (REC.ctx) { REC.ctx.close().catch(() => { }); REC.ctx = REC.dest = null }
+    if (REC.mic) { REC.ctx = new AudioContext(); REC.dest = REC.ctx.createMediaStreamDestination(); REC.ctx.createMediaStreamSource(REC.mic).connect(REC.dest) }
+  }
 }
 async function startRec() {
   if (!navigator.mediaDevices?.getDisplayMedia) return notice('이 브라우저는 화면 녹화를 지원하지 않아요. Chrome이나 Edge로 열어 주세요.');
-  let screen, mic = null;
-  try {
-    screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include' });
-  } catch (e) { return toast('녹화를 시작하지 않았어요') }
-  try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }) }
-  catch (e) { toast('마이크를 쓸 수 없어 화면만 녹화해요', 3500) }
-  REC.streams = [screen]; if (mic) REC.streams.push(mic);
-  const tracks = [...screen.getVideoTracks()];
-  if (mic) {   // 마이크 소리를 녹화 스트림에 합친다
-    REC.ctx = new AudioContext(); const dest = REC.ctx.createMediaStreamDestination();
-    REC.ctx.createMediaStreamSource(mic).connect(dest); tracks.push(...dest.stream.getAudioTracks());
-  }
+  const fresh = !live(REC.screen);
+  try { await ensureShare() } catch (e) { return toast('녹화를 시작하지 않았어요') }
+  const tracks = [...REC.screen.getVideoTracks(), ...(REC.dest ? REC.dest.stream.getAudioTracks() : [])];
   const mime = (recFmt() === 'mp4' && pickMime(MP4_MIME)) || pickMime(WEBM_MIME), ext = mime && mime.startsWith('video/mp4') ? 'mp4' : 'webm';
-  REC.chunks = [];
+  REC.chunks = []; REC.acc = 0;
   const mr = REC.mr = new MediaRecorder(new MediaStream(tracks), mime ? { mimeType: mime, videoBitsPerSecond: recQ() === 'high' ? 8e6 : 4e6 } : {});
   mr.ondataavailable = e => { if (e.data.size) REC.chunks.push(e.data) };
   mr.onstop = () => {
-    recCleanup(); REC.mr = null;
+    clearInterval(REC.tick); REC.mr = null; recUI();
     if (!REC.chunks.length) return toast('녹화된 내용이 없어요');
     const d = new Date(), z = n => String(n).padStart(2, '0');
-    const name = proj.name.replace(/\.pdf$/i, '') + `_녹화_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.${ext}`;
+    const name = proj.name.replace(/\.pdf$/i, '') + `_녹화_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}.${ext}`;
     saveRecFile(new Blob(REC.chunks, { type: ext === 'mp4' ? 'video/mp4' : 'video/webm' }), name);
   };
-  screen.getVideoTracks()[0].onended = () => stopRec();   // 브라우저의 '공유 중지'를 눌러도 저장
-  mr.start(1000); REC.t0 = Date.now();
-  const b = $('#tRec'); b.classList.add('rec');
-  const upd = () => { const s = Math.floor((Date.now() - REC.t0) / 1000); b.innerHTML = `<b>●</b> ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}<br>녹화 중지` };
-  upd(); REC.tick = setInterval(upd, 1000);
-  toast(mic ? '녹화를 시작했어요 (마이크 포함)' : '녹화를 시작했어요 (소리 없음)');
+  mr.start(1000); REC.seg = Date.now(); REC.tick = setInterval(recUI, 1000); recUI();
+  toast((REC.dest ? '녹화를 시작했어요 (마이크 포함)' : '녹화를 시작했어요 (소리 없음)') + (fresh ? ' · 일시정지/계속은 다시 묻지 않아요' : ''));
 }
-function stopRec() { if (REC.mr && REC.mr.state !== 'inactive') REC.mr.stop() }
-$('#tRec').onclick = () => REC.mr ? stopRec() : startRec();
+function pauseResumeRec() {
+  const mr = REC.mr; if (!mr) return;
+  if (mr.state === 'recording') { mr.pause(); REC.acc += Date.now() - REC.seg }
+  else if (mr.state === 'paused') { mr.resume(); REC.seg = Date.now() }
+  recUI();
+}
+function stopRec() { if (REC.mr && REC.mr.state !== 'inactive') { if (REC.mr.state === 'recording') REC.acc += Date.now() - REC.seg; REC.mr.stop() } }
+$('#tRec').onclick = () => REC.mr ? pauseResumeRec() : startRec();
+$('#tRecStop').onclick = stopRec;
+$('#rdShare').onclick = () => { releaseShare(); toast('화면 공유와 마이크를 껐어요') };
 
 loadRecent();
 </script>
