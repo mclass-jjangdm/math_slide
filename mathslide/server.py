@@ -286,6 +286,23 @@ def make_slides_pdf(images):
         return out.tobytes(garbage=3, deflate=True)
 
 
+def make_slides_pptx(images):
+    """슬라이드 그림(JPEG)을 한 장에 한 장씩 꽉 채워 넣은 16:9 PowerPoint 파일. 구글 슬라이드가 그대로 열 수 있다."""
+    import io
+    from pptx import Presentation
+    from pptx.util import Emu
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Emu(12192000), Emu(6858000)   # 13.333 x 7.5 in (16:9)
+    blank = prs.slide_layouts[6]
+    for url in images:
+        raw = base64.b64decode(url.split(",", 1)[1])
+        sl = prs.slides.add_slide(blank)
+        sl.shapes.add_picture(io.BytesIO(raw), 0, 0, prs.slide_width, prs.slide_height)
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -434,6 +451,9 @@ class H(BaseHTTPRequestHandler):
                 if rest == "handout.pdf" and method == "GET":
                     data = make_handout(pid, int(q.get("per", 2)), q.get("title", "").strip()[:80])
                     return self.send(200, data, "application/pdf")
+                if rest == "slides.pptx" and method == "POST":
+                    data = make_slides_pptx(json.loads(self.body())["images"])
+                    return self.send(200, data, "application/vnd.openxmlformats-officedocument.presentationml.presentation")
                 if rest == "slides.pdf" and method == "POST":
                     data = make_slides_pdf(json.loads(self.body())["images"])
                     return self.send(200, data, "application/pdf")

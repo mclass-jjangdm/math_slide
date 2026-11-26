@@ -133,8 +133,6 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 #stage img.p{position:absolute;display:block;max-width:none;pointer-events:none;-webkit-user-drag:none}
 #present.dark #stage img.p{filter:invert(1) hue-rotate(180deg)}
 #figs{position:absolute;left:0;top:0}
-#paper{position:absolute;inset:0;display:none;background-image:linear-gradient(rgba(255,255,255,.12) 2px,transparent 2px),linear-gradient(90deg,rgba(255,255,255,.12) 2px,transparent 2px);background-size:60px 60px}
-#present.light #paper{background-image:linear-gradient(rgba(0,0,0,.14) 2px,transparent 2px),linear-gradient(90deg,rgba(0,0,0,.14) 2px,transparent 2px)}
 #grid .c .im.blank{filter:none;background:#15171e;border:1px dashed #444;display:grid;place-items:center;color:#777;font-size:13px}
 #side .addrow{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
 #side .addrow button{padding:8px 4px;font-size:12.5px}
@@ -258,7 +256,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
           <button id="bHandout">PDF 만들기</button></div>
       </div>
     </span>
-    <button id="bExport">⬇ 슬라이드 PDF 저장</button>
+    <button id="bExport" title="구글 슬라이드에서 열 수 있는 PowerPoint(.pptx) 파일로 저장합니다">⬇ 구글 슬라이드로 저장</button>
     <button id="bPresent" class="pri">▶ 수업 시작</button>
   </div>
   <div id="warn">⚠ 이 PDF는 스캔본(텍스트 없음)으로 보여 자동 검출이 되지 않았습니다. 페이지 위에서 마우스(또는 손가락)로 드래그해 문제 영역을 직접 지정하세요.</div>
@@ -269,7 +267,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
       <div class="hd"><b id="cnt"></b><button id="bAll">전체 선택</button><button id="bNone">전체 해제</button></div>
       <div id="list"></div>
       <div class="ft">
-        <div class="addrow"><button id="bAddBlank" title="선택한 문제 다음에 빈 칠판 페이지를 넣습니다">＋ 빈 칠판 페이지</button><button id="bAddGrid" title="선택한 문제 다음에 모눈 페이지를 넣습니다">＋ 모눈 페이지</button></div>
+        <div class="addrow" style="grid-template-columns:1fr"><button id="bAddBlank" title="선택한 문제 다음에 빈 칠판 페이지를 넣습니다">＋ 빈 칠판 페이지</button></div>
         <div class="tools">
           <button id="bAns" disabled title="선택한 문제의 정답·해설 영역을 드래그로 지정합니다">📝<br>해설 영역</button>
           <button id="bSplit" title="선택한 문제 안의 (1)(2)(3)… 소문항을 각각 슬라이드 한 장으로 나눕니다">✂<br>소문항 나누기</button>
@@ -286,7 +284,6 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 <!-- ====== 수업 ====== -->
 <section id="present" class="view dark">
   <div id="stage">
-    <div id="paper"></div>
     <img class="p" id="pimg" alt="">
     <img class="p" id="ans" alt="">
     <div id="figs"></div>
@@ -339,7 +336,6 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
   <div class="menu" id="mBlank">
     <div style="width:100%;text-align:center;color:#aab;font-size:13px">지금 슬라이드 <b>다음</b>에 빈 페이지를 끼워 넣어요</div>
     <button id="tBlankPlain">⬛<br>빈 칠판</button>
-    <button id="tBlankGrid">▦<br>모눈 칠판</button>
     <button id="tBlankDel" style="display:none">🗑<br>이 빈 페이지 삭제</button>
   </div>
   <div class="menu" id="mShape">
@@ -352,8 +348,9 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
     <div id="saveState" style="width:100%;text-align:center;color:#9fe3b5;font-size:14px;margin-bottom:2px"></div>
     <button id="bSaveNow">💾<br>지금 저장</button>
     <button id="bPng">🖼<br>이 슬라이드 PNG</button>
+    <button id="bPptx">🟨<br>구글 슬라이드용</button>
     <button id="bPdf">📄<br>전체 PDF</button>
-    <div style="width:100%;text-align:center;color:#888;font-size:12px">필기는 자동으로 저장돼요 · PDF에는 필기가 포함돼요</div>
+    <div style="width:100%;text-align:center;color:#888;font-size:12px">필기는 자동으로 저장돼요 · 내보낸 파일에는 필기가 포함돼요</div>
   </div>
   <button id="tbmini">⌃</button>
   <div id="pop"></div>
@@ -615,13 +612,13 @@ $('#pNext').onclick = () => { if (rv.page < proj.pages.length - 1) { rv.page++; 
     wt = now; (e.deltaY > 0 ? $('#pNext') : $('#pPrev')).click();
   }, { passive: false });
 }
-function makeBlank(bg) { return { id: 'b' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36), blank: true, bg, label: '빈 페이지', on: true } }
-function addBlank(bg) {   // 선택한 문제 다음(없으면 맨 끝)에 빈 페이지를 넣는다
+function makeBlank() { return { id: 'b' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36), blank: true, label: '빈 페이지', on: true } }
+function addBlank() {   // 선택한 문제 다음(없으면 맨 끝)에 빈 페이지를 넣는다
   const sid = rv.sel && (rv.sel[0] === 'a' ? rv.sel.slice(1) : rv.sel); let idx = proj.problems.findIndex(p => p.id === sid);
-  idx = idx < 0 ? proj.problems.length : idx + 1; const nb = makeBlank(bg); proj.problems.splice(idx, 0, nb); saveProblems();
-  selectProblem(nb.id, false); toast(bg === 'grid' ? '모눈 페이지를 넣었어요' : '빈 칠판 페이지를 넣었어요');
+  idx = idx < 0 ? proj.problems.length : idx + 1; const nb = makeBlank(); proj.problems.splice(idx, 0, nb); saveProblems();
+  selectProblem(nb.id, false); toast('빈 칠판 페이지를 넣었어요');
 }
-$('#bAddBlank').onclick = () => addBlank('plain'); $('#bAddGrid').onclick = () => addBlank('grid');
+$('#bAddBlank').onclick = () => addBlank();
 $('#bAll').onclick = () => { proj.problems.forEach(p => p.on = true); saveProblems(); renderPage(); renderList() };
 $('#bNone').onclick = () => { proj.problems.forEach(p => p.on = false); saveProblems(); renderPage(); renderList() };
 $('#bHome').onclick = () => { show('home'); loadRecent() };
@@ -654,7 +651,7 @@ $('#bHandout').onclick = () => {
 };
 window.addEventListener('resize', () => { if ($('#review').classList.contains('on')) renderPage(); if ($('#present').classList.contains('on')) fitStage() });
 $('#bPresent').onclick = () => startPresent(0);
-$('#bExport').onclick = () => exportSlides();
+$('#bExport').onclick = () => exportSlides('pptx');
 
 /* =================== 수업 모드 =================== */
 const SW = 1920, SH = 1080;
@@ -897,7 +894,6 @@ function go(i) {
   const img = $('#pimg');
   if (p.blank) { img.onload = null; img.style.display = 'none'; img.removeAttribute('src') }   // 빈 페이지: 문제 그림 없음
   else { img.style.display = ''; img.onload = () => layoutImg(img, p); img.src = cropUrl(p); layoutImg(img, p) }
-  $('#paper').style.display = (p.blank && p.bg === 'grid') ? 'block' : 'none';
   $('#tBlankDel').style.display = p.blank ? 'inline-block' : 'none';
   const a = $('#ans'); a.style.display = 'none'; if (p.answer) { a.src = ansUrl(p); a.onload = () => layoutAns(a, p) }
   P.zoom = false; P.ans = false; P.lasso = null; P.lpath = null; P.lmove = null; setTool('sel');
@@ -905,8 +901,8 @@ function go(i) {
   fitStage(); redrawBase(); present_preload(); buildFigs();
 }
 // ---- 빈 페이지: 수업 중 개념 설명용으로 지금 슬라이드 다음에 끼워 넣는다 ----
-function insertBlank(bg) {
-  const p = cur(), idx = proj.problems.findIndex(x => x.id === p.id), nb = makeBlank(bg);
+function insertBlank() {
+  const p = cur(), idx = proj.problems.findIndex(x => x.id === p.id), nb = makeBlank();
   proj.problems.splice(idx + 1, 0, nb); P.slides = proj.problems.filter(x => x.on);
   saveProblems(); go(P.slides.findIndex(x => x.id === nb.id)); setTool('pen');   // 곧바로 쓸 수 있게 펜으로
 }
@@ -1170,7 +1166,7 @@ function setTool(t) {
   $('#present').style.cursor = (t === 'pen' || t === 'hl' || t === 'er') ? 'none' : 'default';
 }
 $('#tSel').onclick = () => setTool('sel');
-$('#tBlankPlain').onclick = () => insertBlank('plain'); $('#tBlankGrid').onclick = () => insertBlank('grid'); $('#tBlankDel').onclick = deleteBlank;
+$('#tBlankPlain').onclick = () => insertBlank(); $('#tBlankDel').onclick = deleteBlank;
 $('#tLine').onclick = () => { P.shape = 'line'; setTool('shape') };
 $('#tCircle').onclick = () => { P.shape = 'circle'; setTool('shape') };
 $('#tTri').onclick = () => { P.shape = 'tri'; setTool('shape') };
@@ -1217,7 +1213,8 @@ async function doSaveStrokes() {
 }
 async function flushSave() { clearTimeout(saveStrokeT); clearTimeout(saveT); await Promise.all([doSaveStrokes(), saveProblemsNow()]) }
 $('#bSaveNow').onclick = async () => { await flushSave(); toast('저장했어요 ✓') };
-$('#bPdf').onclick = async () => { await flushSave(); exportSlides() };
+$('#bPdf').onclick = async () => { await flushSave(); exportSlides('pdf') };
+$('#bPptx').onclick = async () => { await flushSave(); exportSlides('pptx') };
 $('#bPng').onclick = async () => {
   const z = P.zoom; P.zoom = false; const cv = document.createElement('canvas'); cv.width = SW; cv.height = SH;
   try { await paintSlide(cv.getContext('2d'), cur(), curStrokes(), P.theme) } finally { P.zoom = z }
@@ -1226,7 +1223,7 @@ $('#bPng').onclick = async () => {
 $('#tExit').onclick = () => { stopTimer(); saveStrokes(); document.fullscreenElement && document.exitFullscreen(); show('review'); renderPage(); renderList() };
 $('#tGrid').onclick = () => {
   const g = $('#gg'); g.innerHTML = '';
-  P.slides.forEach((p, i) => { const c = document.createElement('div'); c.className = 'c' + (i === P.i ? ' cur' : ''); c.innerHTML = `<span>${/^\d+$/.test(p.label) ? p.label + '번' : p.label}</span>` + (p.blank ? `<div class="im blank">${p.bg === 'grid' ? '▦ 모눈' : '빈 칠판'}</div>` : `<div class="im" style="background-image:url('${cropUrl(p, 70)}')"></div>`); c.onclick = () => { $('#grid').style.display = 'none'; go(i) }; g.appendChild(c) });
+  P.slides.forEach((p, i) => { const c = document.createElement('div'); c.className = 'c' + (i === P.i ? ' cur' : ''); c.innerHTML = `<span>${/^\d+$/.test(p.label) ? p.label + '번' : p.label}</span>` + (p.blank ? `<div class="im blank">빈 칠판</div>` : `<div class="im" style="background-image:url('${cropUrl(p, 70)}')"></div>`); c.onclick = () => { $('#grid').style.display = 'none'; go(i) }; g.appendChild(c) });
   $('#grid').style.display = 'block';
 };
 $('#grid').onclick = e => { if (e.target.id === 'grid') $('#grid').style.display = 'none' };
@@ -1270,13 +1267,8 @@ document.addEventListener('keydown', e => {
 function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src }) }
 // 슬라이드 한 장을 캔버스에 그린다: 배경 + 문제 + 확대한 그래프 + 필기
 async function paintSlide(c, p, strokeList, theme) {
-  if (p.blank) {   // 빈 페이지: 배경(+모눈)과 필기만
+  if (p.blank) {   // 빈 페이지: 배경과 필기만
     c.fillStyle = theme === 'dark' ? '#000' : '#fff'; c.fillRect(0, 0, SW, SH);
-    if (p.bg === 'grid') {
-      c.save(); c.strokeStyle = theme === 'dark' ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.14)'; c.lineWidth = 2; c.beginPath();
-      for (let x = 0; x <= SW; x += 60) { c.moveTo(x, 0); c.lineTo(x, SH) } for (let y = 0; y <= SH; y += 60) { c.moveTo(0, y); c.lineTo(SW, y) }
-      c.stroke(); c.restore();
-    }
     strokeList.forEach(s => drawStroke(c, s, theme)); return;
   }
   const img = await loadImg(cropUrl(p));
@@ -1287,7 +1279,7 @@ async function paintSlide(c, p, strokeList, theme) {
   c.restore();
   strokeList.forEach(s => drawStroke(c, s, theme));
 }
-async function exportSlides() {
+async function exportSlides(kind = 'pptx') {
   const slides = proj.problems.filter(p => p.on); if (!slides.length) return toast('내보낼 문제가 없어요');
   await saveProblemsNow(); let strokes = {}; try { strokes = await (await api(`/p/${proj.id}/strokes`)).json() } catch (e) { }
   P.zoom = false;
@@ -1298,9 +1290,15 @@ async function exportSlides() {
       await paintSlide(c, slides[i], strokes[slides[i].id] || [], theme);
       out.push(cv.toDataURL('image/jpeg', .92));
     }
-    busy('PDF로 묶는 중…');
-    const r = await api(`/p/${proj.id}/slides.pdf`, { method: 'POST', body: JSON.stringify({ images: out }) });
-    const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = proj.name.replace(/\.pdf$/i, '') + '_슬라이드.pdf'; a.click();
+    busy(kind === 'pdf' ? 'PDF로 묶는 중…' : '슬라이드 파일로 묶는 중…');
+    const r = await api(`/p/${proj.id}/slides.${kind}`, { method: 'POST', body: JSON.stringify({ images: out }) });
+    const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = proj.name.replace(/\.pdf$/i, '') + '_슬라이드.' + kind; a.click();
+    if (kind === 'pptx') { busy(); await notice(`슬라이드 파일(.pptx)을 저장했어요.
+
+구글 슬라이드에서 열려면:
+1. slides.google.com 에서 파일 ▸ 열기 ▸ 업로드 에 이 파일을 끌어 놓기
+   (또는 구글 드라이브에 올린 뒤 더블클릭 ▸ Google 슬라이드로 열기)
+2. 파일 ▸ Google 슬라이드로 저장 하면 내 슬라이드가 됩니다`) }
   } catch (e) { busy(); await notice('내보내기 실패: ' + e.message) } finally { busy() }
 }
 
