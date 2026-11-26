@@ -176,6 +176,8 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
 .edge button small{font-size:12px}
 .edge button:hover{background:rgba(58,62,82,.85)}
 .edge button:disabled{opacity:.18}
+#tb button.rec{background:#c62828;border-color:#ff6b6b;color:#fff}
+#tb button.rec b{animation:bl .8s infinite alternate}
 #tb button.dirty{box-shadow:0 0 0 2px #e8b84d inset}
 .menu{position:fixed;left:50%;bottom:96px;display:none;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;background:rgba(32,34,44,.98);border:1px solid #555;border-radius:16px;padding:12px;z-index:33;box-shadow:0 8px 30px rgba(0,0,0,.55);max-width:94vw;color:#eee}
 .menu button{background:#2c2f3d;color:#eee;border:1px solid #444;min-width:68px;height:46px;border-radius:10px;font-size:12px;line-height:1.2;padding:0 8px}
@@ -308,6 +310,7 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
     <button id="tUndo">↩<br>취소</button>
     <button id="tRedo">↪<br>복원</button>
     <span class="sep"></span>
+    <button id="tRec" title="화면과 마이크 목소리를 함께 녹화합니다">⏺<br>녹화</button>
     <button id="tMoreB" data-menu="mMore">⋯<br>더보기</button>
   </div>
   <div class="edge" id="edgeL"><button data-nav="-1" title="이전 문제 (←)">◀<br><small>이전</small></button><button data-nav="1" title="다음 문제 (→)">▶<br><small>다음</small></button></div>
@@ -1220,7 +1223,7 @@ $('#bPng').onclick = async () => {
   try { await paintSlide(cv.getContext('2d'), cur(), curStrokes(), P.theme) } finally { P.zoom = z }
   cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `${proj.name.replace(/\.pdf$/i, '')}_${cur().label}.png`; a.click(); toast('이미지를 저장했어요') });
 };
-$('#tExit').onclick = () => { stopTimer(); saveStrokes(); document.fullscreenElement && document.exitFullscreen(); show('review'); renderPage(); renderList() };
+$('#tExit').onclick = () => { stopRec(); stopTimer(); saveStrokes(); document.fullscreenElement && document.exitFullscreen(); show('review'); renderPage(); renderList() };
 $('#tGrid').onclick = () => {
   const g = $('#gg'); g.innerHTML = '';
   P.slides.forEach((p, i) => { const c = document.createElement('div'); c.className = 'c' + (i === P.i ? ' cur' : ''); c.innerHTML = `<span>${/^\d+$/.test(p.label) ? p.label + '번' : p.label}</span>` + (p.blank ? `<div class="im blank">빈 칠판</div>` : `<div class="im" style="background-image:url('${cropUrl(p, 70)}')"></div>`); c.onclick = () => { $('#grid').style.display = 'none'; go(i) }; g.appendChild(c) });
@@ -1301,6 +1304,49 @@ async function exportSlides(kind = 'pptx') {
 2. 파일 ▸ Google 슬라이드로 저장 하면 내 슬라이드가 됩니다`) }
   } catch (e) { busy(); await notice('내보내기 실패: ' + e.message) } finally { busy() }
 }
+
+/* =================== 화면 + 마이크 녹화 =================== */
+const REC = { mr: null, chunks: [], streams: [], t0: 0, tick: null, ctx: null };
+function recCleanup() {
+  clearInterval(REC.tick); REC.streams.forEach(st => st.getTracks().forEach(t => t.stop())); REC.streams = [];
+  if (REC.ctx) { REC.ctx.close().catch(() => { }); REC.ctx = null }
+  const b = $('#tRec'); b.classList.remove('rec'); b.innerHTML = '⏺<br>녹화';
+}
+async function startRec() {
+  if (!navigator.mediaDevices?.getDisplayMedia) return notice('이 브라우저는 화면 녹화를 지원하지 않아요. Chrome이나 Edge로 열어 주세요.');
+  let screen, mic = null;
+  try {
+    screen = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false, preferCurrentTab: true, selfBrowserSurface: 'include' });
+  } catch (e) { return toast('녹화를 시작하지 않았어요') }
+  try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }) }
+  catch (e) { toast('마이크를 쓸 수 없어 화면만 녹화해요', 3500) }
+  REC.streams = [screen]; if (mic) REC.streams.push(mic);
+  const tracks = [...screen.getVideoTracks()];
+  if (mic) {   // 마이크 소리를 녹화 스트림에 합친다
+    REC.ctx = new AudioContext(); const dest = REC.ctx.createMediaStreamDestination();
+    REC.ctx.createMediaStreamSource(mic).connect(dest); tracks.push(...dest.stream.getAudioTracks());
+  }
+  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  REC.chunks = [];
+  const mr = REC.mr = new MediaRecorder(new MediaStream(tracks), mime ? { mimeType: mime, videoBitsPerSecond: 4e6 } : {});
+  mr.ondataavailable = e => { if (e.data.size) REC.chunks.push(e.data) };
+  mr.onstop = () => {
+    recCleanup(); REC.mr = null;
+    if (!REC.chunks.length) return toast('녹화된 내용이 없어요');
+    const d = new Date(), z = n => String(n).padStart(2, '0');
+    const name = proj.name.replace(/\.pdf$/i, '') + `_녹화_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.webm`;
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(REC.chunks, { type: 'video/webm' })); a.download = name; a.click();
+    toast('녹화 파일을 저장했어요 (' + name + ')', 4000);
+  };
+  screen.getVideoTracks()[0].onended = () => stopRec();   // 브라우저의 '공유 중지'를 눌러도 저장
+  mr.start(1000); REC.t0 = Date.now();
+  const b = $('#tRec'); b.classList.add('rec');
+  const upd = () => { const s = Math.floor((Date.now() - REC.t0) / 1000); b.innerHTML = `<b>●</b> ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}<br>녹화 중지` };
+  upd(); REC.tick = setInterval(upd, 1000);
+  toast(mic ? '녹화를 시작했어요 (마이크 포함)' : '녹화를 시작했어요 (소리 없음)');
+}
+function stopRec() { if (REC.mr && REC.mr.state !== 'inactive') REC.mr.stop() }
+$('#tRec').onclick = () => REC.mr ? stopRec() : startRec();
 
 loadRecent();
 </script>
