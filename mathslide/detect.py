@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 11  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 12  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -262,6 +262,12 @@ def find_plain_markers(doc):
                 m = PLAIN_RE.match(spans[0]["text"])
                 if m and HEADER_Y * H < ln["bbox"][1] < FOOTER_Y * H:
                     groups[(round(spans[0]["size"], 1), spans[0]["font"])].append((pn, m.group(1), ln["bbox"], W))
+    # 쪽마다 글자 크기가 0.1pt쯤 다르게 찍힌 같은 번호 글꼴(9.4 / 9.5)은 한 묶음으로 합친다
+    merged = {}
+    for key in sorted(groups, key=lambda k: -len(groups[k])):
+        tgt = next((k for k in merged if k[1] == key[1] and abs(k[0] - key[0]) <= 0.3), None)
+        merged.setdefault(tgt or key, []).extend(groups[key])
+    groups = merged
     best, best_n = {}, 0
     for key, items in groups.items():
         if len(items) < 4 or len(items) <= best_n:
