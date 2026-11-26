@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 12  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 13  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -457,6 +457,24 @@ def _badge_top(page, left, right, top, xnum, num_top):
     return new
 
 
+_RULE_RE = re.compile(r"^[\s\-_=~─-╿━═]+$")
+
+
+def _header_floor(page, left, right, top, num_top):
+    """번호 위쪽 여백(top ~ num_top)에 걸린 쪽 번호(숫자만 있는 줄)·머리말 밑줄(선 문자만 있는 줄)이 있으면, 그 줄 바로 아래 y를 돌려준다.
+    (문제 영역에 쪽 번호가 딸려 들어오는 것을 막는다) 없으면 None."""
+    floor = None
+    for b in page.get_text("dict")["blocks"]:
+        for ln in b.get("lines", []):
+            x0, y0, x1, y1 = ln["bbox"]
+            if x1 <= left or x0 >= right or y1 <= top or y1 > num_top + 2:
+                continue
+            t = "".join(s["text"] for s in ln["spans"]).strip()
+            if t and ((t.isdigit() and len(t) <= 3) or _RULE_RE.match(t)):
+                floor = max(floor or 0, y1 + 1)
+    return floor
+
+
 def _trim_trailing_badge(page, left, right, top, bottom, next_top):
     """다음 문제 바로 위에 붙은 작은 꼬리표(예: '발전', '서술형' 배지)는 다음 문제의 것이므로 이 문제 영역에서 뺀다.
     이 문제 내용과 떨어져(30pt 이상) 있고, 작고(폭 90·높이 45 미만), 다음 번호 바로 위(60pt 이내)에 있는 덩어리가 대상이다."""
@@ -635,6 +653,10 @@ def detect(doc):
                     right = W / 2 - 10   # 펼침면의 반대쪽 쪽(읽기 자료 등)까지 번지지 않게
             col.sort(key=lambda n: n[1][1])
             tops = [n[1][1] - 1 if len(n) > 3 and n[3] else max(0, _badge_top(page, left, right, n[1][1] - 8, n[1][0], n[1][1])) for n in col]
+            for i, n in enumerate(col):   # 쪽 번호·머리말 밑줄은 문제 영역에 넣지 않는다
+                fl = _header_floor(page, left, right, tops[i], n[1][1])
+                if fl is not None and fl < n[1][1]:
+                    tops[i] = fl
             for i, (t, bb, *_x) in enumerate(col):
                 inl = bool(_x and _x[0])
                 top = tops[i]
