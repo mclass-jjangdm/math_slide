@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 5  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 6  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -55,7 +55,18 @@ def _looks_like_page_numbers(items):
     return len({it[0] for it in items}) >= 3   # 서로 다른 세 쪽 이상에 반복
 
 
-def find_number_style(doc, allow_page_like=False):
+def _consecutive_ratio(items):
+    """읽는 순서(쪽 → 단 → 위에서 아래)로 늘어놓았을 때 번호가 1씩 이어지는 비율."""
+    seq = sorted(items, key=lambda c: (c[0], round(c[3][0] / 60), c[3][1]))
+    vals = [int(c[1]) for c in seq]
+    if len(vals) < 2:
+        return 0.0
+    return sum(1 for a, b in zip(vals, vals[1:]) if b == a + 1) / (len(vals) - 1)
+
+
+def find_number_styles(doc, allow_page_like=False):
+    """문제 번호 글꼴(크기, 글꼴) 목록. 가장 많이 나온 글꼴이 첫째.
+    교재는 단원 구간마다 번호 글꼴이 다르므로(예: 표준·발전 / 대단원 평가), 번호가 1씩 이어지는 다른 글꼴도 함께 쓴다."""
     sizes, cands = [], []
     for pn, page in enumerate(doc):
         H = page.rect.height
@@ -72,16 +83,27 @@ def find_number_style(doc, allow_page_like=False):
     groups = defaultdict(list)
     for c in cands:
         groups[c[2]].append(c)
-    best, best_score = None, 0
+    ok = []
     for key, items in groups.items():
         if key[0] < body * 1.25 or len(items) < 2:
             continue
         if not allow_page_like and _looks_like_page_numbers(items):
             continue   # 문제 번호가 아니라 쪽 번호(머리말·꼬리말)
-        # 페이지당 평균 개수가 적당하고 개수가 많은 묶음 우선
-        if len(items) > best_score:
-            best, best_score = key, len(items)
-    return best
+        ok.append((len(items), key, items))   # 개수가 많은 묶음 우선
+    if not ok:
+        return []
+    ok.sort(key=lambda t: -t[0])
+    styles = [ok[0][1]]
+    for n, key, items in ok[1:]:
+        # 첫째 글꼴과 크기가 비슷하고 번호가 차례로 이어지면 같은 교재의 다른 구간 번호로 본다
+        if n >= 3 and key[0] >= styles[0][0] * 0.8 and _consecutive_ratio(items) >= 0.7:
+            styles.append(key)
+    return styles
+
+
+def find_number_style(doc, allow_page_like=False):
+    st = find_number_styles(doc, allow_page_like)
+    return st[0] if st else None
 
 
 def _trim(page, rect, pad=5.0, dpi=60):
@@ -314,19 +336,76 @@ def find_notices(page):
     return out
 
 
+def _is_spread(page, nums_cols):
+    """두 쪽이 한 장에 펼쳐진 PDF의 한쪽에만 문제가 있는 경우인가?
+    (가로로 넓고, 가운데 세로선을 가로지르는 글줄이 없다)"""
+    W, H = page.rect.width, page.rect.height
+    if W / H < 1.35:
+        return False
+    mid = W / 2
+    for b in page.get_text("dict")["blocks"]:
+        for ln in b.get("lines", []):
+            x0, y0, x1, y1 = ln["bbox"]
+            if x0 < mid - 8 and x1 > mid + 8 and "".join(s["text"] for s in ln["spans"]).strip():
+                return False
+    return True
+
+
+_SUBSTART = re.compile(r"^\s*(?:[\(（]\s*\d{1,2}\s*[\)）]|[①-⑳])")
+
+
+def _content_bottom(page, left, right, top, bottom, max_gap):
+    """top에서 시작해 글줄·그림이 max_gap보다 크게 끊기기 전까지의 아래쪽 끝. (번호 없는 아래쪽 안내·표를 문제에서 떼어 낸다)"""
+    W, H = page.rect.width, page.rect.height
+    boxes = []
+    for b in page.get_text("dict")["blocks"]:
+        r = pymupdf.Rect(b["bbox"])
+        if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom:
+            continue
+        if b["type"] == 1:
+            if r.height > 0.6 * H or r.width > 1.5 * (right - left):
+                continue   # 배경 그림
+            boxes.append((r.y0, r.y1, ""))
+            continue
+        for ln in b.get("lines", []):
+            txt = "".join(s["text"] for s in ln["spans"]).strip()
+            if txt:
+                lr = pymupdf.Rect(ln["bbox"])
+                if lr.x1 > left and lr.x0 < right and lr.y1 > top:
+                    boxes.append((lr.y0, lr.y1, txt))
+    for d in page.get_drawings():   # 벡터로 그려진 그래프도 내용이다
+        r = pymupdf.Rect(d["rect"])
+        if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom or r.height > 0.5 * H or r.width > 1.2 * (right - left):
+            continue
+        fill = d.get("fill")
+        if fill and min(fill) > 0.97 and not d.get("color"):
+            continue
+        boxes.append((r.y0, r.y1, ""))
+    boxes.sort()
+    if not boxes:
+        return bottom
+    cur = boxes[0][1]
+    for y0, y1, txt in boxes[1:]:
+        if y0 - cur > max_gap and not _SUBSTART.match(txt):   # '(2)' '②'로 시작하는 작은 문제는 같은 문제의 이어지는 부분
+            break
+        cur = max(cur, y1)
+    return min(bottom, cur + 8)
+
+
 def find_big_numbers(doc, style):
+    styles = style if isinstance(style, list) else [style]
     out = {}
     for pn, page in enumerate(doc):
         H = page.rect.height
         for t, key, bb in _num_lines(page):
-            if key == style and HEADER_Y * H < bb[1] < FOOTER_Y * H:
+            if key in styles and HEADER_Y * H < bb[1] < FOOTER_Y * H:
                 out.setdefault(pn, []).append((t, bb))
     return out
 
 
 def detect(doc):
     """문제 표지를 찾는 방법을 차례로 시도한다: 큰 번호 글자 / '추가 1.' 같은 글머리 / (스캔본) 이미지 분석."""
-    style = find_number_style(doc)
+    style = find_number_styles(doc)
     big = find_big_numbers(doc, style) if style else {}
     marks = find_markers(doc)
     plain = find_plain_markers(doc)
@@ -334,8 +413,8 @@ def detect(doc):
     n_big, n_mark, n_plain, n_lead = (sum(map(len, d.values())) for d in (big, marks, plain, lead))
     # 가장 많이 찾은 방법을 쓴다 (동점이면 큰 번호 > 낱말 글머리 > 굵은 번호 > 줄머리 번호 순)
     options = [(n, -i, per) for i, (n, per, need) in enumerate([(n_big, big, 1), (n_mark, marks, 2), (n_plain, plain, 4), (n_lead, lead, 4)]) if n >= need]
-    if not options and style is None:   # 마지막 수단: 쪽 번호처럼 보여도 큰 숫자 글자를 문제 번호로 써 본다
-        style2 = find_number_style(doc, allow_page_like=True)
+    if not options and not style:   # 마지막 수단: 쪽 번호처럼 보여도 큰 숫자 글자를 문제 번호로 써 본다
+        style2 = find_number_styles(doc, allow_page_like=True)
         if style2:
             big = find_big_numbers(doc, style2)
             n_big = sum(map(len, big.values()))
@@ -368,10 +447,14 @@ def detect(doc):
                 right = min(n[1][0] for n in cols[ci + 1]) - 12
             else:
                 right = W - 18
+                if xl < W / 2 and _is_spread(page, cols):
+                    right = W / 2 - 10   # 펼침면의 반대쪽 쪽(읽기 자료 등)까지 번지지 않게
             col.sort(key=lambda n: n[1][1])
             for i, (t, bb) in enumerate(col):
                 top = bb[1] - 8
                 bottom = (col[i + 1][1][1] - 8) if i + 1 < len(col) else min(FOOTER_Y * H, foot_y if foot_y else H)
+                if i + 1 == len(col):   # 단의 마지막 문제: 아래에 번호 없는 표·안내가 있으면 큰 빈틈에서 끊는다
+                    bottom = _content_bottom(page, left, right, top, bottom, 125)
                 for nx0, nx1, ntop in notices.get(pn, []):   # 안내 상자는 마지막 문제 영역에서 뺀다
                     if nx1 > left and nx0 < right and ntop > top:
                         bottom = min(bottom, ntop - 4)
