@@ -33,6 +33,7 @@ import detect
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 PROJECTS = ROOT / "projects"
+UPLOAD_TMP = ROOT / "upload_tmp.pdf"
 PROJECTS.mkdir(exist_ok=True)
 PORT = 8765
 LOCK = threading.RLock()   # pymupdf는 스레드 안전하지 않다
@@ -101,6 +102,21 @@ def project_info(pid):
         "scanned": meta.get("scanned", False),
         "problems": read_json(d / "problems.json", []),
     }
+
+
+def slice_pdf(data, first, last):
+    """쪽 범위(1부터, 양끝 포함)만 남긴 새 PDF. 전체 범위면 원본 그대로."""
+    doc = pymupdf.open(stream=data, filetype="pdf")
+    if doc.needs_pass:
+        raise ValueError("암호가 걸린 PDF입니다. 암호를 해제한 파일을 올려 주세요.")
+    n = len(doc)
+    first, last = max(1, first), min(n, last)
+    if first > last:
+        raise ValueError(f"쪽 범위가 올바르지 않습니다 (이 PDF는 {n}쪽까지 있어요)")
+    if first == 1 and last == n:
+        return data, n, first, last
+    doc.select(list(range(first - 1, last)))
+    return doc.tobytes(garbage=3, deflate=True), n, first, last
 
 
 def create_project(name, data):
@@ -275,8 +291,28 @@ class H(BaseHTTPRequestHandler):
                 threading.Thread(target=lambda: (time.sleep(.3), SRV.shutdown()), daemon=True).start()
                 return
 
+            if path == "/api/probe" and method == "POST":   # 올린 PDF를 임시로 두고 쪽 수만 알려 준다 (범위를 고르기 위해)
+                data = self.body()
+                with LOCK:
+                    doc = pymupdf.open(stream=data, filetype="pdf")
+                    if doc.needs_pass:
+                        raise ValueError("암호가 걸린 PDF입니다. 암호를 해제한 파일을 올려 주세요.")
+                    n = len(doc)
+                    doc.close()
+                UPLOAD_TMP.write_bytes(data)
+                return self.send(200, {"pages": n})
+
             if path == "/api/upload" and method == "POST":
-                pid = create_project(unquote(q.get("name", "문제집.pdf")), self.body())
+                name = unquote(q.get("name", "문제집.pdf"))
+                if q.get("tmp") == "1":   # probe로 올려 둔 PDF에서 지정한 쪽만 가져온다
+                    if not UPLOAD_TMP.exists():
+                        raise ValueError("올린 파일을 찾을 수 없습니다. 다시 올려 주세요")
+                    data, n, a, b = slice_pdf(UPLOAD_TMP.read_bytes(), int(q.get("from", 1)), int(q.get("to", 10**6)))
+                    if (a, b) != (1, n):
+                        name = re.sub(r"\.pdf$", "", name, flags=re.I) + f" ({a}-{b}쪽).pdf"
+                else:
+                    data = self.body()
+                pid = create_project(name, data)
                 return self.send(200, project_info(pid))
 
             if path == "/api/projects" and method == "GET":

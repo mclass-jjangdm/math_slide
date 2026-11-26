@@ -436,9 +436,29 @@ $('#bQuit').onclick = async () => {
 };
 async function upload(f) {
   if (!f) return;
-  busy('문제를 찾는 중입니다… (큰 PDF는 잠시 걸려요)');
+  busy('파일을 읽는 중입니다…');
   try {
-    const info = await (await api('/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f })).json();
+    const { pages } = await (await api('/probe', { method: 'POST', body: f })).json();
+    let q = '';
+    if (pages > 20) {   // 큰 PDF는 필요한 쪽만 가져오게 한다 (인식 시간이 쪽 수에 비례)
+      busy();
+      let r;
+      for (;;) {
+        r = await askText(`총 ${pages}쪽입니다.
+가져올 쪽을 적어 주세요 (예: 12-35)
+비워 두면 전체를 가져와요`, `1-${pages}`);
+        if (r === null) return;
+        r = r.trim();
+        if (!r) { r = `1-${pages}`; }
+        const m = r.match(/^(\d+)\s*(?:[-~]\s*(\d+))?$/);
+        const a = m && +m[1], b = m && (m[2] ? +m[2] : +m[1]);
+        if (m && a >= 1 && a <= b && b <= pages) { q = `&from=${a}&to=${b}`; break }
+        await notice(`쪽 범위가 올바르지 않아요.
+1부터 ${pages} 사이로 적어 주세요 (예: 12-35)`);
+      }
+      busy('문제를 찾는 중입니다…');
+    } else busy('문제를 찾는 중입니다…');
+    const info = await (await api('/upload?tmp=1' + q + '&name=' + encodeURIComponent(f.name), { method: 'POST' })).json();
     busy(); enterReview(info);
   } catch (e) { busy(); await notice('열 수 없습니다: ' + e.message) }
 }
