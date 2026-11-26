@@ -324,12 +324,21 @@ input[type=text]{font:inherit;border:1px solid #31364a;border-radius:8px;padding
   <div class="menu" id="mMore">
     <button id="tTimer">⏱<br>타이머</button>
     <button id="tTheme">🌓<br>배경색</button>
+    <button id="tRecSet" data-menu="mRec" title="녹화 파일 형식과 저장 폴더">🎙<br>녹화 설정</button>
     <button id="tDevB" data-menu="mDevice" title="이 컴퓨터에서 쓰는 필기 장치">🖱<br>필기 장치</button>
     <button id="tFull">⛶<br>전체화면</button>
     <button id="tClear">🗑<br>모든 필기 삭제</button>
     <button id="tHide">⌄<br>메뉴 숨김</button>
     <button id="tSaveB" data-menu="mSave">💾<br>저장</button>
     <button id="tExit">✕<br>나가기</button>
+  </div>
+  <div class="menu" id="mRec">
+    <div style="width:100%;text-align:center;color:#aab;font-size:13px">녹화 파일 형식</div>
+    <button id="rfMp4" data-keep="1">MP4<br><small>어디서나 재생</small></button>
+    <button id="rfWebm" data-keep="1">WebM<br><small>용량 조금 작음</small></button>
+    <div style="width:100%;text-align:center;color:#aab;font-size:13px;margin-top:4px">저장 폴더: <b id="recDirName" style="color:#fff"></b></div>
+    <button id="rdPick" data-keep="1">📁<br>폴더 고르기</button>
+    <button id="rdClear" data-keep="1">↺<br>기본(다운로드)</button>
   </div>
   <div class="menu" id="mDevice">
     <div style="width:100%;text-align:center;color:#aab;font-size:13px">이 컴퓨터의 필기 장치 (한 번 고르면 기억해요)</div>
@@ -1305,6 +1314,47 @@ async function exportSlides(kind = 'pptx') {
   } catch (e) { busy(); await notice('내보내기 실패: ' + e.message) } finally { busy() }
 }
 
+/* ---- 녹화 설정: 형식(MP4/WebM)과 기본 저장 폴더 ---- */
+const MP4_MIME = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4'];
+const WEBM_MIME = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+const pickMime = list => list.find(m => MediaRecorder.isTypeSupported(m));
+const idb = (mode, fn) => new Promise((res, rej) => {
+  const o = indexedDB.open('mathslide-rec', 1); o.onupgradeneeded = () => o.result.createObjectStore('kv');
+  o.onerror = () => rej(o.error);
+  o.onsuccess = () => { const t = o.result.transaction('kv', mode), r = fn(t.objectStore('kv')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error) };
+});
+let recDir = null;   // 저장 폴더 핸들
+async function loadRecDir() { try { recDir = await idb('readonly', st => st.get('dir')) || null } catch (e) { recDir = null } refreshRecMenu() }
+function recFmt() { return localStorage.getItem('recFmt') || 'mp4' }
+function refreshRecMenu() {
+  $('#rfMp4').classList.toggle('on', recFmt() === 'mp4'); $('#rfWebm').classList.toggle('on', recFmt() === 'webm');
+  $('#recDirName').textContent = recDir ? recDir.name : '다운로드 폴더(기본)';
+  $('#rdPick').style.display = window.showDirectoryPicker ? '' : 'none';
+}
+$('#rfMp4').onclick = () => { localStorage.setItem('recFmt', 'mp4'); refreshRecMenu(); if (!pickMime(MP4_MIME)) toast('이 브라우저는 MP4 녹화를 지원하지 않아 WebM으로 저장돼요', 3500) };
+$('#rfWebm').onclick = () => { localStorage.setItem('recFmt', 'webm'); refreshRecMenu() };
+$('#rdPick').onclick = async () => {
+  try { const h = await showDirectoryPicker({ id: 'mathslide-rec', mode: 'readwrite', startIn: 'videos' }); recDir = h; await idb('readwrite', st => st.put(h, 'dir')); refreshRecMenu(); toast('녹화 파일을 이 폴더에 저장해요: ' + h.name, 3000) }
+  catch (e) { if (e.name !== 'AbortError') toast('폴더를 지정하지 못했어요') }
+};
+$('#rdClear').onclick = async () => { recDir = null; try { await idb('readwrite', st => st.delete('dir')) } catch (e) { } refreshRecMenu(); toast('다운로드 폴더로 저장해요') };
+async function saveRecFile(blob, name) {
+  if (recDir) {
+    try {
+      let perm = await recDir.queryPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') perm = await recDir.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        const w = await (await recDir.getFileHandle(name, { create: true })).createWritable(); await w.write(blob); await w.close();
+        return toast(`'${recDir.name}' 폴더에 저장했어요 (${name})`, 4500);
+      }
+    } catch (e) { }
+    toast('지정한 폴더에 저장하지 못해 다운로드 폴더로 저장해요', 3500);
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  toast('녹화 파일을 저장했어요 (' + name + ')', 4000);
+}
+loadRecDir();
+
 /* =================== 화면 + 마이크 녹화 =================== */
 const REC = { mr: null, chunks: [], streams: [], t0: 0, tick: null, ctx: null };
 function recCleanup() {
@@ -1326,17 +1376,16 @@ async function startRec() {
     REC.ctx = new AudioContext(); const dest = REC.ctx.createMediaStreamDestination();
     REC.ctx.createMediaStreamSource(mic).connect(dest); tracks.push(...dest.stream.getAudioTracks());
   }
-  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m));
+  const mime = (recFmt() === 'mp4' && pickMime(MP4_MIME)) || pickMime(WEBM_MIME), ext = mime && mime.startsWith('video/mp4') ? 'mp4' : 'webm';
   REC.chunks = [];
-  const mr = REC.mr = new MediaRecorder(new MediaStream(tracks), mime ? { mimeType: mime, videoBitsPerSecond: 4e6 } : {});
+  const mr = REC.mr = new MediaRecorder(new MediaStream(tracks), mime ? { mimeType: mime, videoBitsPerSecond: 2.5e6 } : {});
   mr.ondataavailable = e => { if (e.data.size) REC.chunks.push(e.data) };
   mr.onstop = () => {
     recCleanup(); REC.mr = null;
     if (!REC.chunks.length) return toast('녹화된 내용이 없어요');
     const d = new Date(), z = n => String(n).padStart(2, '0');
-    const name = proj.name.replace(/\.pdf$/i, '') + `_녹화_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.webm`;
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(REC.chunks, { type: 'video/webm' })); a.download = name; a.click();
-    toast('녹화 파일을 저장했어요 (' + name + ')', 4000);
+    const name = proj.name.replace(/\.pdf$/i, '') + `_녹화_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.${ext}`;
+    saveRecFile(new Blob(REC.chunks, { type: ext === 'mp4' ? 'video/mp4' : 'video/webm' }), name);
   };
   screen.getVideoTracks()[0].onended = () => stopRec();   // 브라우저의 '공유 중지'를 눌러도 저장
   mr.start(1000); REC.t0 = Date.now();
