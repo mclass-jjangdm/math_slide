@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 8  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 9  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -356,6 +356,41 @@ def _is_spread(page, nums_cols):
 _SUBSTART = re.compile(r"^\s*(?:[\(（]\s*\d{1,2}\s*[\)）]|[①-⑳])")
 
 
+def _badge_top(page, left, right, top, xnum, num_top):
+    """번호 위쪽 경계(top)에 걸쳐 있는 작은 꼬리표('서술형' 같은 아이콘·글자)가 있으면 통째로 포함하도록 경계를 올린다.
+    (반만 잘려 들어오는 것을 막는다)"""
+    H = page.rect.height
+    new = top
+    cand = []
+    for b in page.get_text("dict")["blocks"]:
+        if b["type"] == 1:
+            cand.append((pymupdf.Rect(b["bbox"]), 0))
+            continue
+        for ln in b.get("lines", []):
+            txt = "".join(s["text"] for s in ln["spans"]).strip()
+            if txt:
+                cand.append((pymupdf.Rect(ln["bbox"]), len(txt)))
+    for d in page.get_drawings():
+        r = pymupdf.Rect(d["rect"])
+        fill = d.get("fill")
+        if (fill and min(fill) > 0.97 and not d.get("color")) or r.height < 3:
+            continue
+        cand.append((r, 0))
+    inside = [(r, n) for r, n in cand if not (r.x1 <= left or r.x0 >= right)]
+    for r, n in inside:
+        if not (r.y0 < top < r.y1):
+            continue
+        if not (r.width < 100 and r.height < 40 and n <= 6 and r.x0 >= xnum - 6):   # 번호와 왼쪽이 맞는 작은 것만
+            continue
+        # 같은 줄에 넓은 띠(그림·도형)가 있으면 꼬리표가 아니라 단원 제목 띠다 → 포함하지 않고 그 아래부터 시작한다
+        row = [q for q, m in inside if q.y0 < r.y1 and q.y1 > r.y0 and q.y0 < num_top - 2 and m == 0 and q.width >= 100 and q.height < 40]
+        if row:
+            new = max(new, min(max(q.y1 for q in row) + 1, num_top - 4))
+        else:
+            new = min(new, r.y0 - 2)
+    return new
+
+
 def _trim_trailing_badge(page, left, right, top, bottom, next_top):
     """다음 문제 바로 위에 붙은 작은 꼬리표(예: '발전', '서술형' 배지)는 다음 문제의 것이므로 이 문제 영역에서 뺀다.
     이 문제 내용과 떨어져(30pt 이상) 있고, 작고(폭 90·높이 45 미만), 다음 번호 바로 위(60pt 이내)에 있는 덩어리가 대상이다."""
@@ -500,9 +535,10 @@ def detect(doc):
                 if xl < W / 2 and _is_spread(page, cols):
                     right = W / 2 - 10   # 펼침면의 반대쪽 쪽(읽기 자료 등)까지 번지지 않게
             col.sort(key=lambda n: n[1][1])
+            tops = [max(0, _badge_top(page, left, right, n[1][1] - 8, n[1][0], n[1][1])) for n in col]
             for i, (t, bb) in enumerate(col):
-                top = bb[1] - 8
-                bottom = (col[i + 1][1][1] - 8) if i + 1 < len(col) else min(FOOTER_Y * H, foot_y if foot_y else H)
+                top = tops[i]
+                bottom = tops[i + 1] if i + 1 < len(col) else min(FOOTER_Y * H, foot_y if foot_y else H)
                 if i + 1 < len(col):   # 다음 문제 위에 붙은 배지는 다음 문제의 것
                     bottom = _trim_trailing_badge(page, left, right, top, bottom, col[i + 1][1][1])
                 if i + 1 == len(col):   # 단의 마지막 문제: 아래에 번호 없는 표·안내가 있으면 큰 빈틈에서 끊는다
