@@ -486,7 +486,7 @@ def open_app_window(url):
             exe = Path(base) / rel if base else None
             if exe and exe.exists():
                 try:
-                    subprocess.Popen([str(exe), "--app=" + url, "--start-maximized", "--auto-accept-this-tab-capture"], close_fds=True)
+                    subprocess.Popen([str(exe), "--app=" + url, "--start-maximized"], close_fds=True)
                     return True
                 except OSError:
                     continue
