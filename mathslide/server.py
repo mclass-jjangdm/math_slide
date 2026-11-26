@@ -104,19 +104,55 @@ def project_info(pid):
     }
 
 
-def slice_pdf(data, first, last):
-    """쪽 범위(1부터, 양끝 포함)만 남긴 새 PDF. 전체 범위면 원본 그대로."""
+def parse_pages(spec, n):
+    """'48-50,61,68-70' 같은 쪽 지정(1부터, 쉼표·공백으로 구분, 범위는 - 또는 ~)을 쪽 번호 목록으로. 적은 순서대로, 중복은 한 번만."""
+    out = []
+    for part in re.split(r"[,\s]+", spec.strip()):
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d+)(?:\s*[-~]\s*(\d+))?", part)
+        if not m:
+            raise ValueError(f"쪽 범위를 읽을 수 없습니다: '{part}' (예: 48-50,61,68-70)")
+        a = int(m.group(1))
+        b = int(m.group(2)) if m.group(2) else a
+        if a < 1 or a > b or b > n:
+            raise ValueError(f"쪽 범위가 올바르지 않습니다: '{part}' (이 PDF는 {n}쪽까지 있어요)")
+        out.extend(p for p in range(a, b + 1) if p not in out)
+    if not out:
+        raise ValueError("가져올 쪽이 없습니다")
+    return out
+
+
+def slice_pdf(data, pages_spec=None, first=1, last=10**6):
+    """지정한 쪽만 남긴 새 PDF. pages_spec('48-50,61')가 없으면 first~last(양끝 포함). 전체면 원본 그대로.
+    반환: (PDF 바이트, 전체 쪽 수, 선택한 쪽 번호 목록)"""
     doc = pymupdf.open(stream=data, filetype="pdf")
     if doc.needs_pass:
         raise ValueError("암호가 걸린 PDF입니다. 암호를 해제한 파일을 올려 주세요.")
     n = len(doc)
-    first, last = max(1, first), min(n, last)
-    if first > last:
-        raise ValueError(f"쪽 범위가 올바르지 않습니다 (이 PDF는 {n}쪽까지 있어요)")
-    if first == 1 and last == n:
-        return data, n, first, last
-    doc.select(list(range(first - 1, last)))
-    return doc.tobytes(garbage=3, deflate=True), n, first, last
+    if pages_spec:
+        sel = parse_pages(pages_spec, n)
+    else:
+        first, last = max(1, first), min(n, last)
+        if first > last:
+            raise ValueError(f"쪽 범위가 올바르지 않습니다 (이 PDF는 {n}쪽까지 있어요)")
+        sel = list(range(first, last + 1))
+    if sel == list(range(1, n + 1)):
+        return data, n, sel
+    doc.select([p - 1 for p in sel])
+    return doc.tobytes(garbage=3, deflate=True), n, sel
+
+
+def pages_label(sel):
+    """[48,49,50,61,68,69,70] → '48-50,61,68-70'"""
+    runs, i = [], 0
+    while i < len(sel):
+        j = i
+        while j + 1 < len(sel) and sel[j + 1] == sel[j] + 1:
+            j += 1
+        runs.append(str(sel[i]) if i == j else f"{sel[i]}-{sel[j]}")
+        i = j + 1
+    return ",".join(runs)
 
 
 def create_project(name, data):
@@ -307,9 +343,12 @@ class H(BaseHTTPRequestHandler):
                 if q.get("tmp") == "1":   # probe로 올려 둔 PDF에서 지정한 쪽만 가져온다
                     if not UPLOAD_TMP.exists():
                         raise ValueError("올린 파일을 찾을 수 없습니다. 다시 올려 주세요")
-                    data, n, a, b = slice_pdf(UPLOAD_TMP.read_bytes(), int(q.get("from", 1)), int(q.get("to", 10**6)))
-                    if (a, b) != (1, n):
-                        name = re.sub(r"\.pdf$", "", name, flags=re.I) + f" ({a}-{b}쪽).pdf"
+                    data, n, sel = slice_pdf(UPLOAD_TMP.read_bytes(), q.get("pages"), int(q.get("from", 1)), int(q.get("to", 10**6)))
+                    if sel != list(range(1, n + 1)):
+                        lab = pages_label(sel)
+                        if len(lab) > 40:
+                            lab = lab[:37] + "…"
+                        name = re.sub(r"\.pdf$", "", name, flags=re.I) + f" ({lab}쪽).pdf"
                 else:
                     data = self.body()
                 pid = create_project(name, data)

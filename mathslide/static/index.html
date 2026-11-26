@@ -445,16 +445,19 @@ async function upload(f) {
       let r;
       for (;;) {
         r = await askText(`총 ${pages}쪽입니다.
-가져올 쪽을 적어 주세요 (예: 12-35)
+가져올 쪽을 적어 주세요 (예: 12-35 또는 48-50,61,68-70)
 비워 두면 전체를 가져와요`, `1-${pages}`);
         if (r === null) return;
-        r = r.trim();
+        r = r.trim().replace(/[，、]/g, ',');
         if (!r) { r = `1-${pages}`; }
-        const m = r.match(/^(\d+)\s*(?:[-~]\s*(\d+))?$/);
-        const a = m && +m[1], b = m && (m[2] ? +m[2] : +m[1]);
-        if (m && a >= 1 && a <= b && b <= pages) { q = `&from=${a}&to=${b}`; break }
+        const parts = r.split(/[,\s]+/).filter(Boolean);
+        const ok = parts.length && parts.every(p => {
+          const m = p.match(/^(\d+)(?:[-~](\d+))?$/);
+          return m && +m[1] >= 1 && +m[1] <= (m[2] ? +m[2] : +m[1]) && (m[2] ? +m[2] : +m[1]) <= pages;
+        });
+        if (ok) { q = '&pages=' + encodeURIComponent(parts.join(',')); break }
         await notice(`쪽 범위가 올바르지 않아요.
-1부터 ${pages} 사이로 적어 주세요 (예: 12-35)`);
+1부터 ${pages} 사이로, 쉼표로 구분해 적어 주세요 (예: 48-50,61,68-70)`);
       }
       busy('문제를 찾는 중입니다…');
     } else busy('문제를 찾는 중입니다…');
