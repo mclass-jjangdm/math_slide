@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
-DETECT_VERSION = 6  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
+DETECT_VERSION = 7  # 검출 규칙을 고칠 때마다 올린다 (수정 안 한 작업은 열 때 자동으로 다시 검출됨)
 NUM_RE = re.compile(r"\d{1,4}")
 FOOTER_Y = 0.94   # 이 아래는 쪽번호 영역
 HEADER_Y = 0.02
@@ -354,6 +354,51 @@ def _is_spread(page, nums_cols):
 _SUBSTART = re.compile(r"^\s*(?:[\(（]\s*\d{1,2}\s*[\)）]|[①-⑳])")
 
 
+def _trim_trailing_badge(page, left, right, top, bottom, next_top):
+    """다음 문제 바로 위에 붙은 작은 꼬리표(예: '발전', '서술형' 배지)는 다음 문제의 것이므로 이 문제 영역에서 뺀다.
+    이 문제 내용과 떨어져(30pt 이상) 있고, 작고(폭 90·높이 45 미만), 다음 번호 바로 위(60pt 이내)에 있는 덩어리가 대상이다."""
+    H = page.rect.height
+    boxes = []
+    for b in page.get_text("dict")["blocks"]:
+        r = pymupdf.Rect(b["bbox"])
+        if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom:
+            continue
+        if b["type"] == 1:
+            if r.height > 0.6 * H or r.width > 1.5 * (right - left):
+                continue
+            boxes.append(r)
+            continue
+        for ln in b.get("lines", []):
+            if "".join(s["text"] for s in ln["spans"]).strip():
+                lr = pymupdf.Rect(ln["bbox"])
+                if lr.x1 > left and lr.x0 < right and lr.y1 > top:
+                    boxes.append(lr)
+    for d in page.get_drawings():
+        r = pymupdf.Rect(d["rect"])
+        if r.x1 <= left or r.x0 >= right or r.y1 <= top or r.y0 >= bottom or r.height > 0.5 * H or r.width > 1.2 * (right - left):
+            continue
+        if r.height < 3 or (r.height < 12 and r.width > 90):
+            continue   # 점선·구분선
+        fill = d.get("fill")
+        if fill and min(fill) > 0.97 and not d.get("color"):
+            continue
+        boxes.append(r)
+    if not boxes:
+        return bottom
+    boxes.sort(key=lambda r: r.y0)
+    clusters = [[boxes[0].x0, boxes[0].y0, boxes[0].x1, boxes[0].y1]]
+    for r in boxes[1:]:
+        c = clusters[-1]
+        if r.y0 - c[3] > 30:
+            clusters.append([r.x0, r.y0, r.x1, r.y1])
+        else:
+            c[0], c[1], c[2], c[3] = min(c[0], r.x0), min(c[1], r.y0), max(c[2], r.x1), max(c[3], r.y1)
+    last = clusters[-1]
+    if len(clusters) >= 2 and last[3] - last[1] < 45 and last[2] - last[0] < 90 and last[1] >= next_top - 60:
+        return min(bottom, last[1] - 2)
+    return bottom
+
+
 def _content_bottom(page, left, right, top, bottom, max_gap):
     """top에서 시작해 글줄·그림이 max_gap보다 크게 끊기기 전까지의 아래쪽 끝. (번호 없는 아래쪽 안내·표를 문제에서 떼어 낸다)"""
     W, H = page.rect.width, page.rect.height
@@ -453,6 +498,8 @@ def detect(doc):
             for i, (t, bb) in enumerate(col):
                 top = bb[1] - 8
                 bottom = (col[i + 1][1][1] - 8) if i + 1 < len(col) else min(FOOTER_Y * H, foot_y if foot_y else H)
+                if i + 1 < len(col):   # 다음 문제 위에 붙은 배지는 다음 문제의 것
+                    bottom = _trim_trailing_badge(page, left, right, top, bottom, col[i + 1][1][1])
                 if i + 1 == len(col):   # 단의 마지막 문제: 아래에 번호 없는 표·안내가 있으면 큰 빈틈에서 끊는다
                     bottom = _content_bottom(page, left, right, top, bottom, 125)
                 for nx0, nx1, ntop in notices.get(pn, []):   # 안내 상자는 마지막 문제 영역에서 뺀다
